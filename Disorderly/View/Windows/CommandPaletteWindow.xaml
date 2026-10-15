@@ -4,11 +4,11 @@
         Title="Disorderly Command Palette" Width="360" SizeToContent="Height"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
         WindowStartupLocation="Manual" Topmost="True" Background="#171B24"
-        Foreground="#F3F4F8" Icon="/Resources/Images/Disorderly.ico">
+        Foreground="#F3F4F8" Icon="/Disorderly;component/Resources/Images/Disorderly.ico">
     <Border BorderBrush="#454E65" BorderThickness="1" Padding="18">
         <StackPanel>
             <DockPanel Margin="0,0,0,16">
-                <Image Source="/Resources/Images/Disorderly.png" Width="24" Height="24" Margin="0,0,10,0" />
+                <Image Source="/Disorderly;component/Resources/Images/Disorderly.png" Width="24" Height="24" Margin="0,0,10,0" />
                 <TextBlock Text="DISORDERLY" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <TextBlock Text="Root" Foreground="#AEB9DA" HorizontalAlignment="Right" VerticalAlignment="Center" />
             </DockPanel>
