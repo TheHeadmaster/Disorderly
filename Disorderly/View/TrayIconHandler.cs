@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 using Application = System.Windows.Application;
@@ -9,7 +9,7 @@ public static class TrayIconHandler
 {
     private static NotifyIcon? trayIcon;
 
-    public static void Initialize()
+    public static void Initialize(Action openPalette)
     {
         using Stream stream = Application.GetResourceStream(new("/Resources/Images/Disorderly.ico", UriKind.Relative)).Stream;
 
@@ -24,6 +24,7 @@ public static class TrayIconHandler
 
         ContextMenuStrip contextMenu = new();
 
+        contextMenu.Items.Add("Open Command Palette", null, (_, _) => openPalette());
         contextMenu.Items.Add("Open Disorderly", null, (_, _) => OpenMainDisorderlyWindow());
         contextMenu.Items.Add(new ToolStripSeparator());
         contextMenu.Items.Add("Exit", null, (_, _) => Application.Current.Shutdown());

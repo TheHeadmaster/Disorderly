@@ -1,12 +1,11 @@
-﻿using System.Diagnostics;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Interop;
 using Disorderly.Utilities;
-using Microsoft.Win32;
 using Button = System.Windows.Controls.Button;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using MouseEventHandler = System.Windows.Input.MouseEventHandler;
@@ -35,14 +34,10 @@ public class BorderlessWindow : Window
 
     public BorderlessWindow()
     {
-        double currentDPIScaleFactor = SystemHelper.GetCurrentDPIScaleFactor();
-        Screen screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
         this.SizeChanged += this.OnSizeChanged;
         this.StateChanged += this.OnStateChanged;
         this.Loaded += this.OnLoaded;
-        Rectangle workingArea = screen.WorkingArea;
-        this.MaxHeight = (workingArea.Height + 16) / currentDPIScaleFactor;
-        SystemEvents.DisplaySettingsChanged += this.SystemEvents_DisplaySettingsChanged;
+        this.Closed += this.OnClosed;
         this.AddHandler(MouseLeftButtonUpEvent, new MouseButtonEventHandler(this.OnMouseButtonUp), true);
         this.AddHandler(MouseMoveEvent, new MouseEventHandler(this.OnMouseMove));
     }
@@ -95,9 +90,7 @@ public class BorderlessWindow : Window
             return;
         }
 
-        double currentDPIScaleFactor = SystemHelper.GetCurrentDPIScaleFactor();
         Point position = args.GetPosition(this);
-        Debug.WriteLine(position);
         Point screen = this.PointToScreen(position);
         double x = this.mouseDownPosition.X - position.X;
         double y = this.mouseDownPosition.Y - position.Y;
@@ -117,15 +110,13 @@ public class BorderlessWindow : Window
             if (this.WindowState == WindowState.Maximized)
             {
                 this.ToggleWindowState();
-                this.Top = (screen.Y - position.Y) / currentDPIScaleFactor;
-                this.Left = (screen.X - actualWidth) / currentDPIScaleFactor;
+                SystemHelper.MoveWindow(this, screen, new Point(Math.Min(actualWidth, this.ActualWidth), position.Y));
                 this.CaptureMouse();
             }
 
             this.isManualDrag = true;
 
-            this.Top = (screen.Y - this.mouseDownPosition.Y) / currentDPIScaleFactor;
-            this.Left = (screen.X - actualWidth) / currentDPIScaleFactor;
+            SystemHelper.MoveWindow(this, screen, new Point(Math.Min(actualWidth, this.ActualWidth), this.mouseDownPosition.Y));
         }
     }
 
@@ -151,17 +142,48 @@ public class BorderlessWindow : Window
         }
     }
 
-    private void OnSourceInitialized(object? sender, EventArgs args) => this.hwndSource = (HwndSource)PresentationSource.FromVisual(this);
+    private void OnSourceInitialized(object? sender, EventArgs args)
+    {
+        this.hwndSource = (HwndSource)PresentationSource.FromVisual(this);
+        this.hwndSource.AddHook(this.HandleWindowMessage);
+    }
+
+    private void OnClosed(object? sender, EventArgs args) => this.hwndSource?.RemoveHook(this.HandleWindowMessage);
+
+    private nint HandleWindowMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (message == 0x0024) // WM_GETMINMAXINFO uses physical pixels relative to the monitor origin.
+        {
+            DesktopNative.MonitorInfo monitor = DesktopNative.GetMonitor(DesktopNative.MonitorFromWindow(hwnd, 2));
+            DesktopNative.MinMaxInfo info = Marshal.PtrToStructure<DesktopNative.MinMaxInfo>(lParam);
+            info.MaxPosition.X = monitor.Work.Left - monitor.Monitor.Left;
+            info.MaxPosition.Y = monitor.Work.Top - monitor.Monitor.Top;
+            info.MaxSize.X = monitor.Work.Right - monitor.Work.Left;
+            info.MaxSize.Y = monitor.Work.Bottom - monitor.Work.Top;
+            Marshal.StructureToPtr(info, lParam, false);
+            handled = true;
+        }
+        else if (message is 0x02E0 or 0x007E or 0x001A)
+        {
+            // Leave WM_DPICHANGED to WPF; refresh maximize geometry after it processes the change.
+            this.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (this.IsVisible)
+                {
+                    this.RefreshWindowState();
+                }
+            }));
+        }
+
+        return 0;
+    }
 
     private void OnStateChanged(object? sender, EventArgs args)
     {
-        Screen screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
         Thickness thickness = new(0);
         if (this.WindowState != WindowState.Maximized)
         {
-            double currentDPIScaleFactor = SystemHelper.GetCurrentDPIScaleFactor();
-            Rectangle workingArea = screen.WorkingArea;
-            this.MaxHeight = (workingArea.Height + 16) / currentDPIScaleFactor;
+            this.MaxHeight = double.PositiveInfinity;
             this.MaxWidth = double.PositiveInfinity;
 
             if (this.WindowState != WindowState.Maximized)
@@ -180,7 +202,7 @@ public class BorderlessWindow : Window
             this.SetMaximizeButtonsVisibility(Visibility.Collapsed, Visibility.Visible);
         }
 
-        this.LayoutRoot.Margin = thickness;
+        this.LayoutRoot?.Margin = thickness;
         this.PreviousState = this.WindowState;
     }
 
@@ -230,70 +252,11 @@ public class BorderlessWindow : Window
         this.RestoreButton?.Visibility = reverseMaximizeButtonVisiility;
     }
 
-    private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs args)
-    {
-        Screen screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
-        double width = screen.WorkingArea.Width;
-        Rectangle workingArea = screen.WorkingArea;
-        this.previousScreenBounds = new Point(width, workingArea.Height);
-        this.RefreshWindowState();
-    }
+    // WM_GETMINMAXINFO already constrains the native window to the working area.
+    // No system-DPI-specific padding table is needed or applied a second time.
+    protected virtual Thickness GetDefaultMarginForDpi() => new(0);
 
-    protected virtual Thickness GetDefaultMarginForDpi()
-    {
-        int currentDPI = SystemHelper.GetCurrentDPI();
-        Thickness thickness = new(8, 8, 8, 8);
-        if (currentDPI == 120)
-        {
-            thickness = new Thickness(7, 7, 4, 5);
-        }
-        else if (currentDPI == 144)
-        {
-            thickness = new Thickness(7, 7, 3, 1);
-        }
-        else if (currentDPI == 168)
-        {
-            thickness = new Thickness(6, 6, 2, 0);
-        }
-        else if (currentDPI == 192)
-        {
-            thickness = new Thickness(6, 6, 0, 0);
-        }
-        else if (currentDPI == 240)
-        {
-            thickness = new Thickness(6, 6, 0, 0);
-        }
-
-        return thickness;
-    }
-
-    protected virtual Thickness GetFromMinimizedMarginForDpi()
-    {
-        int currentDPI = SystemHelper.GetCurrentDPI();
-        Thickness thickness = new(7, 7, 5, 7);
-        if (currentDPI == 120)
-        {
-            thickness = new Thickness(6, 6, 4, 6);
-        }
-        else if (currentDPI == 144)
-        {
-            thickness = new Thickness(7, 7, 4, 4);
-        }
-        else if (currentDPI == 168)
-        {
-            thickness = new Thickness(6, 6, 2, 2);
-        }
-        else if (currentDPI == 192)
-        {
-            thickness = new Thickness(6, 6, 2, 2);
-        }
-        else if (currentDPI == 240)
-        {
-            thickness = new Thickness(6, 6, 0, 0);
-        }
-
-        return thickness;
-    }
+    protected virtual Thickness GetFromMinimizedMarginForDpi() => new(0);
 
     protected virtual void OnHeaderBarMouseLeftButtonDown(object sender, MouseButtonEventArgs args)
     {

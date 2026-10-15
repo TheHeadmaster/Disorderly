@@ -1,35 +1,28 @@
-﻿using System.Reflection;
 using System.Windows;
-using System.Windows.Forms;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace Disorderly.Utilities;
 
-/// <summary>
-/// A helper used for low-level windows system methods such as getting DPI and mouse position.
-/// </summary>
 internal static class SystemHelper
 {
-    /// <summary>
-    /// Gets the current system DPI.
-    /// </summary>
-    /// <returns>
-    /// The DPI as an <see cref="int" />.
-    /// </returns>
-    public static int GetCurrentDPI() => (int?)typeof(SystemParameters).GetProperty("Dpi", BindingFlags.Static | BindingFlags.NonPublic)?.GetValue(null, null) ?? 0;
+    /// <summary>Use a specific visual's WPF DPI, including before its HWND exists.</summary>
+    public static double GetCurrentDPIScaleFactor(Visual visual) => VisualTreeHelper.GetDpi(visual).DpiScaleX;
 
-    /// <summary>
-    /// Gets the current system DPI scale factor.
-    /// </summary>
-    /// <returns>
-    /// The scale factor as a <see cref="double" />.
-    /// </returns>
-    public static double GetCurrentDPIScaleFactor() => (double)GetCurrentDPI() / 96;
+    public static int GetCurrentDPI(Visual visual) => (int)Math.Round(VisualTreeHelper.GetDpi(visual).PixelsPerInchX);
 
-    /// <summary>
-    /// Gets the mouse position as defined in Windows Forms.
-    /// </summary>
-    /// <returns>
-    /// A <see cref="Point" /> representing the mouse position.
-    /// </returns>
-    public static Point GetMousePositionWindowsForms() => new(Control.MousePosition.X, Control.MousePosition.Y);
+    /// <summary>Places a window using physical coordinates without scaling the desktop origin.</summary>
+    public static void MoveWindow(Window window, Point screenPosition, Point anchorDip)
+    {
+        nint handle = new WindowInteropHelper(window).Handle;
+        if (handle == 0)
+        {
+            return;
+        }
+
+        DpiScale dpi = VisualTreeHelper.GetDpi(window);
+        DesktopNative.Place(handle, new PixelBounds(
+            (int)Math.Round(screenPosition.X - (anchorDip.X * dpi.DpiScaleX)),
+            (int)Math.Round(screenPosition.Y - (anchorDip.Y * dpi.DpiScaleY)), 0, 0), false);
+    }
 }

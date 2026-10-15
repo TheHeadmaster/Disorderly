@@ -1,7 +1,9 @@
 using System.IO;
 using System.Windows;
 using Disorderly.Resolvers;
+using Disorderly.Services;
 using Disorderly.View;
+using Disorderly.View.Windows;
 using ReactiveUI;
 using ReactiveUI.Builder;
 using Serilog;
@@ -14,6 +16,9 @@ namespace Disorderly;
 /// </summary>
 public partial class App : Application
 {
+    private CommandPaletteController? paletteController;
+    private GlobalHotkeyService? hotkeyService;
+
     /// <summary>
     /// The list of directories used by the application.
     /// </summary>
@@ -51,8 +56,6 @@ public partial class App : Application
             .WithMainThreadScheduler(RxSchedulers.MainThreadScheduler)
             .WithTaskPoolScheduler(RxSchedulers.TaskpoolScheduler)
             .BuildApp();
-
-        TrayIconHandler.Initialize();
     }
 
     /// <summary>
@@ -77,13 +80,22 @@ public partial class App : Application
         base.OnStartup(args);
 
         Initialize();
+        this.paletteController = new CommandPaletteController(new CommandPaletteWindow());
+        TrayIconHandler.Initialize(() => this.Dispatcher.BeginInvoke(new Action(() => this.paletteController.Open())));
+        this.hotkeyService = new GlobalHotkeyService(new WindowsHotkeyRegistration());
+        this.hotkeyService.Activated += this.OnHotkeyActivated;
+        this.hotkeyService.Start();
     }
+
+    private void OnHotkeyActivated(object? sender, EventArgs args) => this.paletteController?.Toggle();
 
     /// <inheritdoc />
     protected override void OnExit(ExitEventArgs args)
     {
         base.OnExit(args);
 
+        this.hotkeyService?.Dispose();
+        this.paletteController?.Dispose();
         TrayIconHandler.Shutdown();
 
         Log.CloseAndFlush();
