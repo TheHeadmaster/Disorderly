@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Disorderly/Disorderly.csproj" />
+  <Project Path="Disorderly.Testing/Disorderly.Testing.csproj" />
+</Solution>
