@@ -9,7 +9,6 @@
         <VersionSuffix>alpha</VersionSuffix>
         <IncludePackageReferencesDuringMarkupCompilation>true</IncludePackageReferencesDuringMarkupCompilation>
         <ApplicationManifest>app.manifest</ApplicationManifest>
-        <ApplicationManifest>app.manifest</ApplicationManifest>
         <ApplicationIcon>Resources\Images\Disorderly.ico</ApplicationIcon>
         <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
