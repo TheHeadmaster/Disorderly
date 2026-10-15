@@ -23,8 +23,8 @@ public class CommandPaletteWindowTests
         Assert.That(window.ResizeMode, Is.EqualTo(ResizeMode.NoResize));
         int dismissals = 0;
         window.DismissRequested += (_, _) => dismissals++;
-        new WindowInteropHelper(window).EnsureHandle();
-        KeyEventArgs escape = new(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, Key.Escape)
+        nint handle = new WindowInteropHelper(window).EnsureHandle();
+        KeyEventArgs escape = new(Keyboard.PrimaryDevice, HwndSource.FromHwnd(handle), 0, Key.Escape)
         {
             RoutedEvent = Keyboard.PreviewKeyDownEvent,
         };
