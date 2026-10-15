@@ -1,4 +1,9 @@
 <Solution>
-  <Project Path="Disorderly/Disorderly.csproj" />
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="README.md" />
+  </Folder>
   <Project Path="Disorderly.Testing/Disorderly.Testing.csproj" />
+  <Project Path="Disorderly/Disorderly.csproj" />
 </Solution>

@@ -3,6 +3,7 @@ root = true
 
 # C# files
 [**/*.cs]
+dotnet_diagnostic.IDE0058.severity = none
 
 # Indentation and spacing
 indent_size = 4
