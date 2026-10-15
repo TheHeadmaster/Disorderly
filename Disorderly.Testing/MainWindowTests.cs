@@ -1,4 +1,3 @@
-using System.Threading;
 using NUnit.Framework;
 
 namespace Disorderly.Testing;
