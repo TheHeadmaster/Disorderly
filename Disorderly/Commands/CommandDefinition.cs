@@ -18,7 +18,7 @@ public sealed record ParameterDefinition(string Id, string Name, ParameterValueT
 
 /// <summary>A reusable contract, never mutable invocation or execution state.</summary>
 public sealed record CommandDefinition(string Id, string DisplayName, IReadOnlyList<ParameterDefinition> Parameters,
-    string? Description = null, CompletionPolicy? DefaultCompletionPolicy = null, CommandIcon? Icon = null)
+    string? Description = null, CompletionPolicy? DefaultCompletionPolicy = null, CommandIcon? Icon = null, CommandExecutionSpecification? Execution = null)
 {
     public CommandIcon EffectiveIcon => this.Icon ?? new CommandIcon.Automatic();
 }

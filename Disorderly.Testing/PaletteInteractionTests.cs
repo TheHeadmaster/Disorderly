@@ -37,12 +37,14 @@ public class PaletteInteractionTests
     {
         public event EventHandler<PaletteDismissEventArgs>? DismissRequested;
         public event EventHandler<PaletteGestureEventArgs>? GestureReceived;
+        public event EventHandler<PaletteSubmissionEventArgs>? SubmissionRequested;
         public PalettePresentation Presentation { get; private set; } = null!;
         public int Shows { get; private set; }
         public bool FocusSucceeds { get; set; } = true;
         public void Render(PalettePresentation presentation) => this.Presentation = presentation;
         public bool ShowAtForegroundMonitor() { this.Shows++; return this.FocusSucceeds; }
         public void Hide() { }
+        public void RequestRun(PaletteSubmissionEventArgs args) => this.SubmissionRequested?.Invoke(this, args);
         public void Dispose() { }
         public void Key(string key) => this.Send(this.Presentation.ActivationId, new(key));
         public void Send(Guid activation, LogicalGesture gesture) => this.GestureReceived?.Invoke(this, new(activation, gesture));

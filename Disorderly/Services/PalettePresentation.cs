@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Disorderly.Commands;
+using Disorderly.Execution;
 using Disorderly.Routing;
 
 namespace Disorderly.Services;
@@ -10,23 +11,37 @@ public sealed record PaletteBindingLabel(string Gesture, string Name, string Kin
 }
 
 public sealed record PalettePresentation(Guid ActivationId, string ContextName, string Breadcrumb,
-    ImmutableArray<PaletteBindingLabel> Bindings, bool IsRoot, CommandInvocation? Selection)
+    ImmutableArray<PaletteBindingLabel> Bindings, bool IsRoot, CommandInvocation? Selection, bool ExecutionAvailable = false,
+    bool Submitting = false, ExecutionResult? Execution = null, Guid? AttemptId = null)
 {
     public string NavigationHint => this.IsRoot ? "Esc  Dismiss" : "Esc  Back";
-    public string SelectionStatus => this.Selection is null ? string.Empty : this.Selection.IsExecutionReady
-        ? "Arguments complete. Execution is not yet available."
-        : $"{string.Join("; ", this.Selection.Validation.Diagnostics.Select(diagnostic => diagnostic.Message))} Execution is not yet available.";
+    public bool CanRun => this.Selection?.IsExecutionReady == true && this.ExecutionAvailable && !this.Submitting
+        && (this.AttemptId is null || this.Execution?.CanRetry == true);
+    public string RunLabel => this.Execution?.CanRetry == true ? "Retry" : "Run";
+    public string SelectionStatus => this.Submitting ? "Launching..." : this.Execution?.Message ?? (this.Selection is null ? string.Empty
+        : $"{(this.Selection.IsExecutionReady ? "Arguments complete." : string.Join("; ", this.Selection.Validation.Diagnostics.Select(diagnostic => diagnostic.Message)))} "
+            + (this.ExecutionAvailable ? (this.Selection.IsExecutionReady ? "Executable implementation available. Select Run to launch." : "Executable implementation available. Complete the required arguments before Run.")
+                : "Execution is not yet available. No executable implementation is configured or arguments are incomplete."));
 }
 
 public sealed class PaletteGestureEventArgs(Guid activationId, LogicalGesture gesture) : EventArgs
 {
     public Guid ActivationId { get; } = activationId;
     public LogicalGesture Gesture { get; } = gesture;
+    public bool Handled { get; set; } = true;
 }
 
 public sealed class PaletteDismissEventArgs(Guid activationId) : EventArgs
 {
     public Guid ActivationId { get; } = activationId;
+}
+
+/// <summary>Retry must name the previous failed attempt; stale Run/Retry events cannot create fresh attempts.</summary>
+public sealed class PaletteSubmissionEventArgs(Guid activationId, Guid invocationId, Guid? previousAttemptId = null) : EventArgs
+{
+    public Guid ActivationId { get; } = activationId;
+    public Guid InvocationId { get; } = invocationId;
+    public Guid? PreviousAttemptId { get; } = previousAttemptId;
 }
 
 /// <summary>The palette configuration source reserves exactly the external activation gesture and Escape.</summary>

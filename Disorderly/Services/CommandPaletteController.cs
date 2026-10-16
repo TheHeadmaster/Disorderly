@@ -1,5 +1,7 @@
 using Disorderly.Commands;
+using Disorderly.Execution;
 using Disorderly.Routing;
+using Serilog;
 
 namespace Disorderly.Services;
 
@@ -15,6 +17,7 @@ public interface ICommandPaletteView : IDisposable
 {
     event EventHandler<PaletteDismissEventArgs>? DismissRequested;
     event EventHandler<PaletteGestureEventArgs>? GestureReceived;
+    event EventHandler<PaletteSubmissionEventArgs>? SubmissionRequested;
     void Render(PalettePresentation presentation);
     bool ShowAtForegroundMonitor();
     void Hide();
@@ -25,17 +28,23 @@ public sealed class CommandPaletteController : IDisposable
 {
     private readonly ICommandPaletteView view;
     private readonly CommandConfigurationStore configurations;
+    private readonly SubmissionCoordinator submissions;
+    private ExecutionReadyRequest? attempt;
+    private ExecutionResult? execution;
+    private bool submitting;
     private CommandInteraction? interaction;
     private CommandInvocation? selection;
     private Guid activationId;
     private bool disposed;
 
-    public CommandPaletteController(ICommandPaletteView view, CommandConfigurationStore? configurations = null)
+    public CommandPaletteController(ICommandPaletteView view, CommandConfigurationStore? configurations = null, SubmissionCoordinator? submissions = null)
     {
         this.view = view;
         this.configurations = configurations ?? PaletteConfiguration.CreateEmptyStore();
+        this.submissions = submissions ?? SubmissionCoordinator.CreateDefault();
         this.view.DismissRequested += this.OnDismissRequested;
         this.view.GestureReceived += this.OnGestureReceived;
+        this.view.SubmissionRequested += this.OnSubmissionRequested;
     }
 
     public PaletteState State { get; private set; } = PaletteState.Hidden;
@@ -73,7 +82,7 @@ public sealed class CommandPaletteController : IDisposable
             }
 
             this.activationId = Guid.NewGuid();
-            this.selection = null;
+            this.ClearSelection();
             this.Render();
             if (this.State != PaletteState.Opening)
             {
@@ -106,7 +115,7 @@ public sealed class CommandPaletteController : IDisposable
 
         this.State = PaletteState.Dismissing;
         this.interaction = null;
-        this.selection = null;
+        this.ClearSelection();
         this.activationId = Guid.Empty;
         try
         {
@@ -126,6 +135,8 @@ public sealed class CommandPaletteController : IDisposable
         }
 
         RoutingResult result = this.interaction.Routing.Route(args.Gesture);
+        // Unassigned Tab may use ordinary WPF focus navigation; an assigned Tab still routes locally.
+        args.Handled = result is not RoutingResult.NoMatch || args.Gesture.Key != "TAB";
         switch (result)
         {
             case RoutingResult.DismissRequested:
@@ -133,10 +144,11 @@ public sealed class CommandPaletteController : IDisposable
                 return;
             case RoutingResult.ContextEntered:
             case RoutingResult.ContextReturned:
-                this.selection = null;
+                this.ClearSelection();
                 this.Render();
                 break;
             case RoutingResult.CommandRequested request:
+                this.ClearSelection();
                 this.selection = this.interaction.Prepare(request).Invocation;
                 this.Render();
                 break;
@@ -154,7 +166,92 @@ public sealed class CommandPaletteController : IDisposable
                 BindingDestination.Context context => new PaletteBindingLabel(binding.Gesture.ToString(), current.Snapshot.Routing.GetContext(context.ContextId).DisplayName, "Context"),
                 BindingDestination.Command command => new PaletteBindingLabel(binding.Gesture.ToString(), current.Snapshot.Catalog.Find(command.CommandId)!.DisplayName, "Command"),
                 _ => throw new InvalidOperationException("Validated destination required."),
-            })], routing.NavigationPath.Length == 1, this.selection));
+            })], routing.NavigationPath.Length == 1, this.selection,
+            this.selection is not null && this.submissions.HasImplementation(this.selection),
+            this.submitting, this.execution, this.attempt?.AttemptId));
+    }
+
+    private void ClearSelection()
+    {
+        this.selection = null;
+        this.attempt = null;
+        this.execution = null;
+        this.submitting = false;
+    }
+
+    /// <summary>Called on the interaction thread. Accepted work outlives navigation/dismissal.</summary>
+    public async Task SubmitAsync(PaletteSubmissionEventArgs args)
+    {
+        if (this.disposed || this.State != PaletteState.Visible || this.activationId != args.ActivationId
+            || this.selection is null || this.selection.Id != args.InvocationId || this.submitting)
+        {
+            return;
+        }
+
+        if (this.attempt is null ? args.PreviousAttemptId is not null
+            : this.execution?.CanRetry != true || args.PreviousAttemptId != this.attempt.AttemptId)
+        {
+            return;
+        }
+
+        CommandInvocation invocation = this.selection;
+        if (!this.submissions.Availability(invocation).Available)
+        {
+            return;
+        }
+
+        ExecutionReadyRequest? request = invocation.PrepareAttempt().Request;
+        if (request is null)
+        {
+            return;
+        }
+
+        this.attempt = request;
+        this.submitting = true;
+        this.execution = null;
+        this.Render();
+        ExecutionResult result;
+        try
+        {
+            result = await this.submissions.SubmitAsync(request);
+        }
+        catch (Exception error)
+        {
+            Log.Warning("Submission raised {ExceptionType} for {CommandId}, invocation {InvocationId}, attempt {AttemptId}.",
+                error.GetType().Name, invocation.Command.Id, invocation.Id, request.AttemptId);
+            result = ExecutionResult.For(request, ExecutionOutcome.Uncertain, "SubmissionFailure", "The launch outcome could not be established. Do not retry blindly.");
+        }
+
+        if (this.disposed || this.State != PaletteState.Visible || this.activationId != args.ActivationId
+            || this.selection?.Id != invocation.Id || !ReferenceEquals(this.attempt, request))
+        {
+            return;
+        }
+
+        this.submitting = false;
+        this.execution = result;
+        if (result.Outcome == ExecutionOutcome.Succeeded && invocation.CompletionPolicy == CompletionPolicy.Dismiss)
+        {
+            this.Dismiss();
+        }
+        else
+        {
+            // Stay Open preserves the current path. A completed preview cannot submit again.
+            this.Render();
+        }
+    }
+
+    private async void OnSubmissionRequested(object? sender, PaletteSubmissionEventArgs args)
+    {
+        try
+        {
+            await this.SubmitAsync(args);
+        }
+        catch (Exception error)
+        {
+            // Observe event-task/presentation failures without taking down the dispatcher.
+            Log.Warning("Palette submission presentation raised {ExceptionType} for invocation {InvocationId}.", error.GetType().Name, args.InvocationId);
+        }
     }
 
     private void OnDismissRequested(object? sender, PaletteDismissEventArgs args)
@@ -175,6 +272,7 @@ public sealed class CommandPaletteController : IDisposable
         this.Dismiss();
         this.view.DismissRequested -= this.OnDismissRequested;
         this.view.GestureReceived -= this.OnGestureReceived;
+        this.view.SubmissionRequested -= this.OnSubmissionRequested;
         this.view.Dispose();
         this.disposed = true;
     }

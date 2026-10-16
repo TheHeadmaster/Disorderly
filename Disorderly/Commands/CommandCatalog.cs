@@ -87,6 +87,21 @@ public sealed class CommandCatalogValidator
                 diagnostics.Add(new(CommandDiagnosticCode.InvalidCompletionPolicy, "Unsupported command completion policy.", command.Id));
             }
 
+            bool validExecution = command.Execution switch
+            {
+                null => true,
+                CommandExecutionSpecification.LaunchExecutable launch => StableIdentifier.IsValid(launch.ExecutableParameterId)
+                    && command.Parameters.Any(parameter => parameter is not null && parameter.Id == launch.ExecutableParameterId
+                        && parameter.Required && parameter.ValueType == ParameterValueType.Path),
+                _ => false,
+            };
+            if (!validExecution)
+            {
+                diagnostics.Add(new(CommandDiagnosticCode.InvalidExecutionSpecification,
+                    "LaunchExecutable requires an existing required Path parameter and a supported specification.", command.Id,
+                    ParameterId: (command.Execution as CommandExecutionSpecification.LaunchExecutable)?.ExecutableParameterId));
+            }
+
             bool validIcon = command.Icon switch
             {
                 null or CommandIcon.Automatic => true,

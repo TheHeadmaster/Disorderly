@@ -6,7 +6,7 @@
         WindowStartupLocation="Manual" Topmost="True" Background="#171B24"
         Foreground="#F3F4F8" Icon="/Disorderly;component/Resources/Images/Disorderly.ico">
     <Border x:Name="FocusSurface" BorderBrush="#778BCA" BorderThickness="1" Padding="18"
-            Focusable="True" KeyboardNavigation.TabNavigation="None" AutomationProperties.Name="Context shortcuts">
+            Focusable="True" KeyboardNavigation.TabNavigation="Cycle" AutomationProperties.Name="Context shortcuts">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -44,7 +44,12 @@
                         <StackPanel AutomationProperties.Name="Selected command preview">
                             <TextBlock x:Name="SelectionTitle" FontWeight="SemiBold" TextWrapping="Wrap" />
                             <TextBlock x:Name="SelectionDescription" TextWrapping="Wrap" Margin="0,4,0,4" Foreground="#C4CCE0" />
-                            <TextBlock x:Name="SelectionStatus" TextWrapping="Wrap" Foreground="#B9CBFF" />
+                            <TextBlock x:Name="SelectionStatus" TextWrapping="Wrap" Foreground="#B9CBFF"
+                                       AutomationProperties.Name="Command execution status" AutomationProperties.LiveSetting="Polite" />
+                            <Button x:Name="RunButton" Content="Run" Visibility="Collapsed" IsEnabled="False"
+                                    HorizontalAlignment="Left" Margin="0,10,0,0" Padding="18,6" Click="OnRunClick"
+                                    PreviewMouseLeftButtonDown="OnRunMouseDown" PreviewMouseLeftButtonUp="OnRunMouseUp"
+                                    AutomationProperties.Name="Run selected command" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

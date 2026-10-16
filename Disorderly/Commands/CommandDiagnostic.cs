@@ -11,6 +11,7 @@ public enum CommandDiagnosticSeverity
 public enum CommandDiagnosticCode
 {
     InvalidDefinition,
+    InvalidExecutionSpecification,
     InvalidIdentifier,
     DuplicateCommand,
     InvalidParameter,

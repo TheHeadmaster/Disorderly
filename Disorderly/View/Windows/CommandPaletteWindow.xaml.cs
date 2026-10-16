@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -21,12 +22,15 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
     private readonly WpfGestureAdapter keyboard = new();
     private Guid activationId;
     private int activationTimestamp;
+    private PaletteSubmissionEventArgs? submission;
+    private PaletteSubmissionEventArgs? runInput;
 
     public CommandPaletteWindow()
     {
         this.InitializeComponent();
         this.Deactivated += this.OnDeactivated;
         this.PreviewKeyDown += this.OnPreviewKeyDown;
+        this.PreviewKeyUp += this.OnPreviewKeyUp;
         TextCompositionManager.AddPreviewTextInputStartHandler(this, this.OnCompositionStarted);
         TextCompositionManager.AddPreviewTextInputUpdateHandler(this, this.OnCompositionStarted);
         TextCompositionManager.AddPreviewTextInputHandler(this, this.OnCompositionCompleted);
@@ -34,6 +38,7 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
 
     public event EventHandler<PaletteDismissEventArgs>? DismissRequested;
     public event EventHandler<PaletteGestureEventArgs>? GestureReceived;
+    public event EventHandler<PaletteSubmissionEventArgs>? SubmissionRequested;
 
     public void Render(PalettePresentation presentation)
     {
@@ -54,6 +59,12 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         this.SelectionTitle.Text = presentation.Selection?.Command.DisplayName ?? string.Empty;
         this.SelectionDescription.Text = presentation.Selection?.Command.Description ?? string.Empty;
         this.SelectionStatus.Text = presentation.SelectionStatus;
+        this.submission = presentation.Selection is null ? null
+            : new PaletteSubmissionEventArgs(presentation.ActivationId, presentation.Selection.Id, presentation.AttemptId);
+        this.RunButton.Visibility = presentation.ExecutionAvailable ? Visibility.Visible : Visibility.Collapsed;
+        this.RunButton.IsEnabled = presentation.CanRun;
+        this.RunButton.Content = presentation.RunLabel;
+        System.Windows.Automation.AutomationProperties.SetName(this.RunButton, $"{presentation.RunLabel} selected command");
         System.Windows.Automation.AutomationProperties.SetName(this.ContextTitle, $"Active context: {presentation.ContextName}");
         if (this.IsVisible)
         {
@@ -74,6 +85,9 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         this.SelectionTitle.Text = string.Empty;
         this.SelectionDescription.Text = string.Empty;
         this.SelectionStatus.Text = string.Empty;
+        this.submission = null;
+        this.RunButton.IsEnabled = false;
+        this.RunButton.Visibility = Visibility.Collapsed;
     }
 
     public bool ShowAtForegroundMonitor()
@@ -240,6 +254,56 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         return false;
     }
 
+    private void OnRunClick(object sender, RoutedEventArgs args)
+    {
+        // Physical input retains its starting selection; automation invokes the current identified control.
+        PaletteSubmissionEventArgs? request = this.runInput ?? this.submission;
+        this.runInput = null;
+        if (this.IsVisible && this.RunButton.IsEnabled && request is not null)
+        {
+            this.SubmissionRequested?.Invoke(this, request);
+        }
+    }
+
+    private void OnRunMouseDown(object sender, MouseButtonEventArgs args)
+    {
+        if (args.ClickCount > 1 || unchecked(args.Timestamp - this.activationTimestamp) < 0)
+        {
+            this.runInput = null;
+            args.Handled = true;
+            return;
+        }
+
+        this.runInput = this.submission;
+    }
+
+    private bool HasStaleRunInput => this.runInput is not null && (this.runInput.ActivationId != this.submission?.ActivationId
+        || this.runInput.InvocationId != this.submission?.InvocationId);
+
+    private void OnRunMouseUp(object sender, MouseButtonEventArgs args)
+    {
+        if (this.HasStaleRunInput || unchecked(args.Timestamp - this.activationTimestamp) < 0)
+        {
+            args.Handled = true;
+            this.runInput = null;
+            this.RunButton.ReleaseMouseCapture();
+        }
+    }
+
+    private void OnPreviewKeyUp(object sender, KeyEventArgs args)
+    {
+        if (this.RunButton.IsKeyboardFocusWithin && args.Key is Key.Enter or Key.Space
+            && (this.HasStaleRunInput || unchecked(args.Timestamp - this.activationTimestamp) < 0))
+        {
+            args.Handled = true;
+            this.runInput = null;
+            this.FocusSurface.Focus();
+        }
+    }
+
+    /// <summary>Focused buttons own activation/focus keys; repeats must not click again.</summary>
+    public static bool RunControlOwnsKey(Key key) => key is Key.Enter or Key.Space or Key.Tab;
+
     private void OnCompositionStarted(object sender, TextCompositionEventArgs args) => this.keyboard.BeginComposition();
     private void OnCompositionCompleted(object sender, TextCompositionEventArgs args) => this.keyboard.CompleteComposition();
 
@@ -251,14 +315,27 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         if (this.activationId == Guid.Empty || !this.IsVisible || !this.IsKeyboardFocusWithin
             || unchecked(args.Timestamp - this.activationTimestamp) < 0)
         {
+            args.Handled = this.RunButton.IsKeyboardFocusWithin && RunControlOwnsKey(args.Key);
+            return;
+        }
+
+        if (this.RunButton.IsKeyboardFocusWithin && RunControlOwnsKey(args.Key))
+        {
+            args.Handled = args.IsRepeat && args.Key is Key.Enter or Key.Space;
+            if (!args.Handled && args.Key is Key.Enter or Key.Space)
+            {
+                this.runInput = this.submission;
+            }
+
             return;
         }
 
         if (this.keyboard.TryTranslate(args.Key, args.SystemKey, Keyboard.Modifiers, args.IsRepeat,
             Keyboard.IsKeyDown(Key.RightAlt), contextual, out Disorderly.Routing.LogicalGesture gesture))
         {
-            args.Handled = true;
-            this.GestureReceived?.Invoke(this, new PaletteGestureEventArgs(this.activationId, gesture));
+            PaletteGestureEventArgs input = new(this.activationId, gesture);
+            this.GestureReceived?.Invoke(this, input);
+            args.Handled = input.Handled;
         }
     }
 
@@ -286,6 +363,7 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         this.source?.RemoveHook(this.HandleMessage);
         this.Deactivated -= this.OnDeactivated;
         this.PreviewKeyDown -= this.OnPreviewKeyDown;
+        this.PreviewKeyUp -= this.OnPreviewKeyUp;
         TextCompositionManager.RemovePreviewTextInputStartHandler(this, this.OnCompositionStarted);
         TextCompositionManager.RemovePreviewTextInputUpdateHandler(this, this.OnCompositionStarted);
         TextCompositionManager.RemovePreviewTextInputHandler(this, this.OnCompositionCompleted);
