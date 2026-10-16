@@ -44,8 +44,11 @@ public class CommandPaletteWindowTests
         ImmutableArray<PaletteBindingLabel> bindings = [.. Enumerable.Range(0, 80).Select(number => new PaletteBindingLabel($"F{number}", $"Command {number}", "Command"))];
         window.Render(new(Guid.NewGuid(), "Root", "Root", bindings, true, null));
         FrameworkElement content = (FrameworkElement)window.Content;
+        // Measure an offscreen layout root, not a child of a collapsed, never-shown Window.
+        window.Content = null;
         content.Measure(new Size(360, 480));
         content.Arrange(new Rect(0, 0, 360, 480));
+        content.UpdateLayout();
         Assert.That(content.DesiredSize.Height, Is.LessThanOrEqualTo(480));
         ScrollViewer scroll = (ScrollViewer)window.FindName("ContextScroll");
         Assert.That(scroll.ExtentHeight, Is.GreaterThan(scroll.ViewportHeight));
