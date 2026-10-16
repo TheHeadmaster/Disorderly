@@ -1,4 +1,5 @@
 using Disorderly.Commands;
+using Disorderly.Commands.Editing;
 using Disorderly.Execution;
 using Disorderly.Routing;
 using Serilog;
@@ -18,6 +19,7 @@ public interface ICommandPaletteView : IDisposable
     event EventHandler<PaletteDismissEventArgs>? DismissRequested;
     event EventHandler<PaletteGestureEventArgs>? GestureReceived;
     event EventHandler<PaletteSubmissionEventArgs>? SubmissionRequested;
+    event EventHandler<PaletteArgumentEditEventArgs>? ArgumentEdited;
     void Render(PalettePresentation presentation);
     bool ShowAtForegroundMonitor();
     void Hide();
@@ -34,18 +36,23 @@ public sealed class CommandPaletteController : IDisposable
     private bool submitting;
     private CommandInteraction? interaction;
     private CommandInvocation? selection;
+    private ArgumentEditorSession? editor;
     private Guid activationId;
     private bool disposed;
 
-    public CommandPaletteController(ICommandPaletteView view, CommandConfigurationStore? configurations = null, SubmissionCoordinator? submissions = null)
+    public CommandPaletteController(ICommandPaletteView view, CommandConfigurationStore? configurations = null, SubmissionCoordinator? submissions = null, IInvocationDraftStore? drafts = null)
     {
         this.view = view;
         this.configurations = configurations ?? PaletteConfiguration.CreateEmptyStore();
         this.submissions = submissions ?? SubmissionCoordinator.CreateDefault();
+        this.DraftStore = drafts ?? new InvocationDraftStore();
         this.view.DismissRequested += this.OnDismissRequested;
         this.view.GestureReceived += this.OnGestureReceived;
         this.view.SubmissionRequested += this.OnSubmissionRequested;
+        this.view.ArgumentEdited += this.OnArgumentEdited;
     }
+
+    public IInvocationDraftStore DraftStore { get; }
 
     public PaletteState State { get; private set; } = PaletteState.Hidden;
 
@@ -150,6 +157,7 @@ public sealed class CommandPaletteController : IDisposable
             case RoutingResult.CommandRequested request:
                 this.ClearSelection();
                 this.selection = this.interaction.Prepare(request).Invocation;
+                this.editor = this.selection is null ? null : new ArgumentEditorSession(this.selection);
                 this.Render();
                 break;
         }
@@ -168,15 +176,40 @@ public sealed class CommandPaletteController : IDisposable
                 _ => throw new InvalidOperationException("Validated destination required."),
             })], routing.NavigationPath.Length == 1, this.selection,
             this.selection is not null && this.submissions.HasImplementation(this.selection),
-            this.submitting, this.execution, this.attempt?.AttemptId));
+            this.submitting, this.execution, this.attempt?.AttemptId, this.editor?.Snapshot));
     }
 
     private void ClearSelection()
     {
+        if (this.editor is not null)
+        {
+            this.DraftStore.Retain(this.editor.Snapshot, this.attempt, this.execution);
+        }
+
+        this.editor = null;
         this.selection = null;
         this.attempt = null;
         this.execution = null;
         this.submitting = false;
+    }
+
+    private void OnArgumentEdited(object? sender, PaletteArgumentEditEventArgs args)
+    {
+        if (this.disposed || this.State != PaletteState.Visible || args.ActivationId != this.activationId
+            || args.InvocationId != this.selection?.Id || this.editor is null || this.submitting
+            || (this.attempt is not null && this.execution?.CanRetry != true))
+        {
+            return;
+        }
+
+        if (this.editor.TryApply(args.EditorId, args.Revision, args.ParameterId, args.Change))
+        {
+            this.selection = this.editor.Snapshot.Invocation;
+            if (args.Change is not ArgumentEdit.Caret)
+            {
+                this.Render();
+            }
+        }
     }
 
     /// <summary>Called on the interaction thread. Accepted work outlives navigation/dismissal.</summary>
@@ -195,6 +228,12 @@ public sealed class CommandPaletteController : IDisposable
         }
 
         CommandInvocation invocation = this.selection;
+        if (this.editor is not null && (!this.editor.Snapshot.CanSubmit
+            || (args.EditingRevision is long revision ? revision != this.editor.Snapshot.Revision : this.editor.Snapshot.HasMeaningfulChanges)))
+        {
+            return;
+        }
+
         if (!this.submissions.Availability(invocation).Available)
         {
             return;
@@ -206,8 +245,10 @@ public sealed class CommandPaletteController : IDisposable
             return;
         }
 
+        ArgumentEditingSnapshot? submittedEditing = this.editor?.Snapshot;
         this.attempt = request;
         this.submitting = true;
+        this.editor?.SetReadOnly(true);
         this.execution = null;
         this.Render();
         ExecutionResult result;
@@ -225,11 +266,18 @@ public sealed class CommandPaletteController : IDisposable
         if (this.disposed || this.State != PaletteState.Visible || this.activationId != args.ActivationId
             || this.selection?.Id != invocation.Id || !ReferenceEquals(this.attempt, request))
         {
+            // Preserve meaningful non-start failures independently, without restoring obsolete UI.
+            if (submittedEditing is not null)
+            {
+                this.DraftStore.Retain(submittedEditing, request, result);
+            }
+
             return;
         }
 
         this.submitting = false;
         this.execution = result;
+        this.editor?.SetReadOnly(!result.CanRetry);
         if (result.Outcome == ExecutionOutcome.Succeeded && invocation.CompletionPolicy == CompletionPolicy.Dismiss)
         {
             this.Dismiss();
@@ -273,6 +321,7 @@ public sealed class CommandPaletteController : IDisposable
         this.view.DismissRequested -= this.OnDismissRequested;
         this.view.GestureReceived -= this.OnGestureReceived;
         this.view.SubmissionRequested -= this.OnSubmissionRequested;
+        this.view.ArgumentEdited -= this.OnArgumentEdited;
         this.view.Dispose();
         this.disposed = true;
     }

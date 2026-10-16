@@ -44,11 +44,14 @@
                         <StackPanel AutomationProperties.Name="Selected command preview">
                             <TextBlock x:Name="SelectionTitle" FontWeight="SemiBold" TextWrapping="Wrap" />
                             <TextBlock x:Name="SelectionDescription" TextWrapping="Wrap" Margin="0,4,0,4" Foreground="#C4CCE0" />
+                            <TextBlock x:Name="EditingHint" Text="Tab moves between fields and Run. Esc leaves a field." TextWrapping="Wrap" Foreground="#B8C6E6" FontSize="11" Margin="0,6,0,0" />
+                            <StackPanel x:Name="ArgumentEditors" AutomationProperties.Name="Command parameter editors" />
                             <TextBlock x:Name="SelectionStatus" TextWrapping="Wrap" Foreground="#B9CBFF"
                                        AutomationProperties.Name="Command execution status" AutomationProperties.LiveSetting="Polite" />
                             <Button x:Name="RunButton" Content="Run" Visibility="Collapsed" IsEnabled="False"
                                     HorizontalAlignment="Left" Margin="0,10,0,0" Padding="18,6" Click="OnRunClick"
                                     PreviewMouseLeftButtonDown="OnRunMouseDown" PreviewMouseLeftButtonUp="OnRunMouseUp"
+                                    LostKeyboardFocus="OnRunLostKeyboardFocus" LostMouseCapture="OnRunLostMouseCapture"
                                     AutomationProperties.Name="Run selected command" />
                         </StackPanel>
                     </Border>

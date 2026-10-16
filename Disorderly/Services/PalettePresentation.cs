@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Disorderly.Commands;
+using Disorderly.Commands.Editing;
 using Disorderly.Execution;
 using Disorderly.Routing;
 
@@ -12,16 +13,38 @@ public sealed record PaletteBindingLabel(string Gesture, string Name, string Kin
 
 public sealed record PalettePresentation(Guid ActivationId, string ContextName, string Breadcrumb,
     ImmutableArray<PaletteBindingLabel> Bindings, bool IsRoot, CommandInvocation? Selection, bool ExecutionAvailable = false,
-    bool Submitting = false, ExecutionResult? Execution = null, Guid? AttemptId = null)
+    bool Submitting = false, ExecutionResult? Execution = null, Guid? AttemptId = null, ArgumentEditingSnapshot? Editing = null)
 {
     public string NavigationHint => this.IsRoot ? "Esc  Dismiss" : "Esc  Back";
     public bool CanRun => this.Selection?.IsExecutionReady == true && this.ExecutionAvailable && !this.Submitting
+        && (this.Editing is null || this.Editing.CanSubmit)
         && (this.AttemptId is null || this.Execution?.CanRetry == true);
     public string RunLabel => this.Execution?.CanRetry == true ? "Retry" : "Run";
-    public string SelectionStatus => this.Submitting ? "Launching..." : this.Execution?.Message ?? (this.Selection is null ? string.Empty
-        : $"{(this.Selection.IsExecutionReady ? "Arguments complete." : string.Join("; ", this.Selection.Validation.Diagnostics.Select(diagnostic => diagnostic.Message)))} "
-            + (this.ExecutionAvailable ? (this.Selection.IsExecutionReady ? "Executable implementation available. Select Run to launch." : "Executable implementation available. Complete the required arguments before Run.")
-                : "Execution is not yet available. No executable implementation is configured or arguments are incomplete."));
+    public string SelectionStatus
+    {
+        get
+        {
+            if (this.Submitting)
+            {
+                return "Launching...";
+            }
+
+            if (this.Selection is null)
+            {
+                return string.Empty;
+            }
+
+            string errors = string.Join("; ", (this.Editing?.Diagnostics ?? this.Selection.Validation.Diagnostics).Select(diagnostic => diagnostic.Message));
+            if (this.Execution is not null)
+            {
+                return $"{this.Execution.Message} {errors}".TrimEnd();
+            }
+
+            return $"{(errors.Length == 0 ? "Arguments complete." : errors)} "
+                + (this.ExecutionAvailable ? (errors.Length == 0 ? "Executable implementation available. Select Run to launch." : "Executable implementation available. Resolve argument diagnostics before Run.")
+                    : "Execution is not yet available. No executable implementation is configured or arguments are incomplete.");
+        }
+    }
 }
 
 public sealed class PaletteGestureEventArgs(Guid activationId, LogicalGesture gesture) : EventArgs
@@ -37,11 +60,23 @@ public sealed class PaletteDismissEventArgs(Guid activationId) : EventArgs
 }
 
 /// <summary>Retry must name the previous failed attempt; stale Run/Retry events cannot create fresh attempts.</summary>
-public sealed class PaletteSubmissionEventArgs(Guid activationId, Guid invocationId, Guid? previousAttemptId = null) : EventArgs
+public sealed class PaletteSubmissionEventArgs(Guid activationId, Guid invocationId, Guid? previousAttemptId = null, long? editingRevision = null) : EventArgs
 {
     public Guid ActivationId { get; } = activationId;
     public Guid InvocationId { get; } = invocationId;
     public Guid? PreviousAttemptId { get; } = previousAttemptId;
+    public long? EditingRevision { get; } = editingRevision;
+}
+
+public sealed class PaletteArgumentEditEventArgs(Guid activationId, Guid invocationId, Guid editorId, long revision,
+    string parameterId, ArgumentEdit change) : EventArgs
+{
+    public Guid ActivationId { get; } = activationId;
+    public Guid InvocationId { get; } = invocationId;
+    public Guid EditorId { get; } = editorId;
+    public long Revision { get; } = revision;
+    public string ParameterId { get; } = parameterId;
+    public ArgumentEdit Change { get; } = change;
 }
 
 /// <summary>The palette configuration source reserves exactly the external activation gesture and Escape.</summary>

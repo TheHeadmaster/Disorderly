@@ -52,7 +52,15 @@ Concrete limits: drive/UNC `.exe` syntax is checked at execution time; relative/
 
 The WPF preview exposes explicit Run/Retry, pending and inline outcomes. A focused Run button owns its standard Enter/Space activation and focus traversal, including repeat suppression; Enter is not reserved globally or in contextual configuration. Unassigned Tab on the contextual surface can perform standard focus navigation; assigned context bindings retain their meaning. No production sample bindings or command-management UI are introduced.
 
-**Still Deferred:** Document association launching, structured executable argument vectors, scripts/shell commands, argument editing, typed command search, configuration UI/persistence, in-memory/persistent drafts/Resume, background scheduling, pause/cancellation of long-running work, SQLite journaling, filesystem mutation/recovery, Undo/Activity, icon extraction/rendering/customization and durable execution deduplication across crashes.
+**Implemented — Argument Editing I:** `Commands.Editing.ArgumentEditorSession` holds raw parameter input separately from typed immutable invocation revisions, retaining command/catalog, origin and completion policy. Changes identify activation, invocation, editing session, expected revision and parameter; stale/unknown/out-of-scope edits are rejected. Revisions replace only the affected parameter ID through `WithArguments`; domain structure/type/requiredness remains authoritative in `ArgumentValidator`. Supplied binding presets are non-editable in this initial interface and remain unchanged; this deliberately limited boundary does not settle future preset override/editability policies.
+
+Text preserves Unicode, whitespace and explicit empty presence. Boolean distinguishes absent/false/true. Integer uses invariant ASCII digits with an optional sign and checked Int64 parsing; malformed/overflow raw text is retained and blocks Run. Path remains opaque text, validated through the existing domain boundary without filesystem access. Invalid supplied input never reuses an older typed value or becomes an implicitly omitted optional value for submission. Run requires valid typed arguments, no pending input errors, an implementation and the existing attempt/retry eligibility. Editing itself creates no attempt. Accepted versions freeze until a known non-start failure permits correction and explicit identified Retry; uncertain/successful attempts cannot be casually edited or resubmitted.
+
+The WPF field controls are stable for an editing session; validation updates values/diagnostics without rebuilding focused controls, caret/selection or the parameter list. Descendant/interactive-control ownership keeps text, IME, named editing keys and Tab local. Escape first permits native composition/dropdown cancellation or leaves the editor; it cannot also navigate. Context-surface navigation, focused Run semantics and the single global hotkey remain distinct. Run capture now invalidates on activation/invocation/attempt/editing-revision/availability changes and clears on hide/disposal; obsolete physical input does not fall back to a current submission. Native capture/focus is canceled on hide so fresh physical and automation input can proceed.
+
+`IInvocationDraftStore`/`InvocationDraftStore` retain multiple independent meaningful unfinished editor snapshots in memory without expiry, persistence or raw-value logging. Stable draft/invocation IDs, command/catalog interpretation, origin, typed assignments, raw invalid buffers, last parameter/caret/selection position, preset flags and prior non-start attempt metadata are retained. Preview/selection/navigation alone does not qualify. Pending accepted work is not an unfinished draft; a later known non-start failure can retain meaningful input independently without altering current UI. Success/uncertainty does not create a resumable draft. Each activation remains Root-first; neither a Resume suggestion nor a draft browser/restoration flow is implemented. Pure model reconstruction preserves invocation identity and creates a fresh editing-event epoch for later integration.
+
+**Still Deferred:** Preset editing/override policy, inline pills, guided prompting beyond this field editor, autocomplete/path completion, typed search, Root Resume/Tab-to-Resume and older-draft browsing, persistent drafts/configuration, configuration management, additional execution kinds/argument vectors, operations/scheduling/pause/cancel, SQLite journaling/recovery, filesystem mutation/file organization/Undo/Activity, icon extraction/customization and durable deduplication.
 
 ## Glossary
 
@@ -765,11 +773,11 @@ Icon metadata does not define the identity or behavior of a command.
 
 ## Deferred Features and Implementation Boundaries
 
-The following remain **Settled** and **Deferred** after Command Execution I; they are not currently implemented:
+The following remain **Settled** and **Deferred** after Argument Editing I; they are not currently implemented:
 
 - Execution kinds beyond direct executable launching, typed command search and the binding editor.
-- Command discovery and typed argument editing.
-- Suspended invocation drafts.
+- Command discovery, parameter pills, autocomplete and guided prompting beyond the initial field editor.
+- User-facing Resume and draft browsing (minimal in-memory retention is implemented).
 - Durable draft persistence.
 - Interactive organization sessions.
 - Background operation scheduler.

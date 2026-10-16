@@ -6,6 +6,8 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Disorderly.Input;
+using Disorderly.Commands.Editing;
+using Disorderly.View.Controls;
 using Disorderly.Services;
 using Disorderly.Utilities;
 using Serilog;
@@ -23,7 +25,10 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
     private Guid activationId;
     private int activationTimestamp;
     private PaletteSubmissionEventArgs? submission;
-    private PaletteSubmissionEventArgs? runInput;
+    private readonly RunInputCapture runInput = new();
+    private Guid editorId;
+    private readonly Dictionary<string, ArgumentParameterEditor> parameterEditors = [];
+    private PaletteBindingLabel[] renderedBindings = [];
 
     public CommandPaletteWindow()
     {
@@ -39,12 +44,14 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
     public event EventHandler<PaletteDismissEventArgs>? DismissRequested;
     public event EventHandler<PaletteGestureEventArgs>? GestureReceived;
     public event EventHandler<PaletteSubmissionEventArgs>? SubmissionRequested;
+    public event EventHandler<PaletteArgumentEditEventArgs>? ArgumentEdited;
 
     public void Render(PalettePresentation presentation)
     {
         this.Dispatcher.VerifyAccess();
         if (presentation.ActivationId != this.activationId)
         {
+            this.runInput.Clear();
             this.activationId = presentation.ActivationId;
             this.activationTimestamp = Environment.TickCount;
             this.keyboard.Reset();
@@ -52,15 +59,23 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
 
         this.ContextTitle.Text = presentation.ContextName;
         this.Breadcrumb.Text = presentation.Breadcrumb;
-        this.BindingList.ItemsSource = presentation.Bindings;
+        if (!this.renderedBindings.SequenceEqual(presentation.Bindings))
+        {
+            this.renderedBindings = [.. presentation.Bindings];
+            this.BindingList.ItemsSource = this.renderedBindings;
+        }
+
         this.EmptyContext.Visibility = presentation.Bindings.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         this.NavigationHint.Text = presentation.NavigationHint;
         this.SelectionPreview.Visibility = presentation.Selection is null ? Visibility.Collapsed : Visibility.Visible;
         this.SelectionTitle.Text = presentation.Selection?.Command.DisplayName ?? string.Empty;
         this.SelectionDescription.Text = presentation.Selection?.Command.Description ?? string.Empty;
         this.SelectionStatus.Text = presentation.SelectionStatus;
+        this.EditingHint.Visibility = presentation.Editing?.Parameters.IsEmpty == false ? Visibility.Visible : Visibility.Collapsed;
         this.submission = presentation.Selection is null ? null
-            : new PaletteSubmissionEventArgs(presentation.ActivationId, presentation.Selection.Id, presentation.AttemptId);
+            : new PaletteSubmissionEventArgs(presentation.ActivationId, presentation.Selection.Id, presentation.AttemptId, presentation.Editing?.Revision);
+        this.runInput.Update(this.submission, presentation.CanRun);
+        this.UpdateEditors(presentation);
         this.RunButton.Visibility = presentation.ExecutionAvailable ? Visibility.Visible : Visibility.Collapsed;
         this.RunButton.IsEnabled = presentation.CanRun;
         this.RunButton.Content = presentation.RunLabel;
@@ -74,13 +89,23 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
 
     public new void Hide()
     {
+        this.runInput.Clear();
+        this.RunButton.ReleaseMouseCapture();
+        if (this.IsKeyboardFocusWithin)
+        {
+            Keyboard.ClearFocus();
+        }
+
+        this.runInput.Cancel(); // Native button capture/press has now been canceled, not retargeted.
         this.activationId = Guid.Empty;
+        this.ClearEditors();
         this.placementOperation?.Abort();
         this.placementOperation = null;
         this.placementQueued = false;
         this.keyboard.Reset();
         base.Hide();
         this.BindingList.ItemsSource = null;
+        this.renderedBindings = [];
         this.SelectionPreview.Visibility = Visibility.Collapsed;
         this.SelectionTitle.Text = string.Empty;
         this.SelectionDescription.Text = string.Empty;
@@ -254,11 +279,51 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         return false;
     }
 
+    private void UpdateEditors(PalettePresentation presentation)
+    {
+        ArgumentEditingSnapshot? editing = presentation.Editing;
+        if (editing?.SessionId != this.editorId)
+        {
+            this.ClearEditors();
+            this.editorId = editing?.SessionId ?? Guid.Empty;
+            if (editing is not null)
+            {
+                foreach (ParameterInputState state in editing.Parameters)
+                {
+                    ArgumentParameterEditor control = new();
+                    control.Edited += this.OnArgumentEdited;
+                    this.parameterEditors.Add(state.Parameter.Id, control);
+                    this.ArgumentEditors.Children.Add(control);
+                }
+            }
+        }
+
+        if (editing is not null)
+        {
+            foreach (ParameterInputState state in editing.Parameters)
+            {
+                this.parameterEditors[state.Parameter.Id].Update(presentation.ActivationId, editing, state);
+            }
+        }
+    }
+
+    private void ClearEditors()
+    {
+        foreach (ArgumentParameterEditor control in this.parameterEditors.Values)
+        {
+            control.Edited -= this.OnArgumentEdited;
+        }
+
+        this.parameterEditors.Clear();
+        this.ArgumentEditors.Children.Clear();
+        this.editorId = Guid.Empty;
+    }
+
+    private void OnArgumentEdited(object? sender, PaletteArgumentEditEventArgs args) => this.ArgumentEdited?.Invoke(this, args);
+
     private void OnRunClick(object sender, RoutedEventArgs args)
     {
-        // Physical input retains its starting selection; automation invokes the current identified control.
-        PaletteSubmissionEventArgs? request = this.runInput ?? this.submission;
-        this.runInput = null;
+        PaletteSubmissionEventArgs? request = this.runInput.Take();
         if (this.IsVisible && this.RunButton.IsEnabled && request is not null)
         {
             this.SubmissionRequested?.Invoke(this, request);
@@ -269,23 +334,38 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
     {
         if (args.ClickCount > 1 || unchecked(args.Timestamp - this.activationTimestamp) < 0)
         {
-            this.runInput = null;
+            this.runInput.Cancel();
             args.Handled = true;
             return;
         }
 
-        this.runInput = this.submission;
+        this.runInput.Begin();
     }
 
-    private bool HasStaleRunInput => this.runInput is not null && (this.runInput.ActivationId != this.submission?.ActivationId
-        || this.runInput.InvocationId != this.submission?.InvocationId);
+    private void OnRunLostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs args)
+    {
+        if (!this.RunButton.IsKeyboardFocusWithin)
+        {
+            this.runInput.Cancel();
+            this.RunButton.ReleaseMouseCapture();
+        }
+    }
+
+    private void OnRunLostMouseCapture(object sender, MouseEventArgs args)
+    {
+        // Normal mouse-up releases capture immediately before Click; retain that valid capture.
+        if (Mouse.LeftButton == MouseButtonState.Pressed)
+        {
+            this.runInput.Cancel();
+        }
+    }
 
     private void OnRunMouseUp(object sender, MouseButtonEventArgs args)
     {
-        if (this.HasStaleRunInput || unchecked(args.Timestamp - this.activationTimestamp) < 0)
+        if (!this.RunButton.IsMouseOver || this.runInput.IsStale || unchecked(args.Timestamp - this.activationTimestamp) < 0)
         {
             args.Handled = true;
-            this.runInput = null;
+            this.runInput.Cancel();
             this.RunButton.ReleaseMouseCapture();
         }
     }
@@ -293,10 +373,10 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
     private void OnPreviewKeyUp(object sender, KeyEventArgs args)
     {
         if (this.RunButton.IsKeyboardFocusWithin && args.Key is Key.Enter or Key.Space
-            && (this.HasStaleRunInput || unchecked(args.Timestamp - this.activationTimestamp) < 0))
+            && (this.runInput.IsStale || unchecked(args.Timestamp - this.activationTimestamp) < 0))
         {
             args.Handled = true;
-            this.runInput = null;
+            this.runInput.Cancel();
             this.FocusSurface.Focus();
         }
     }
@@ -311,7 +391,11 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
     {
         // Input queued before this activation cannot route into its replacement session.
         // No text events dispatch gestures. Future editors can take ownership through OriginalSource.
-        bool contextual = args.OriginalSource is not System.Windows.Controls.Primitives.TextBoxBase;
+        DependencyObject? focus = Keyboard.FocusedElement as DependencyObject ?? args.OriginalSource as DependencyObject;
+        ArgumentParameterEditor? editor = PaletteInputOwnership.FindEditor(focus)
+            ?? PaletteInputOwnership.FindEditor(args.OriginalSource as DependencyObject)
+            ?? this.parameterEditors.Values.FirstOrDefault(control => control.BooleanInput.IsDropDownOpen);
+        bool contextual = !PaletteInputOwnership.IsInteractive(focus);
         if (this.activationId == Guid.Empty || !this.IsVisible || !this.IsKeyboardFocusWithin
             || unchecked(args.Timestamp - this.activationTimestamp) < 0)
         {
@@ -319,17 +403,39 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
             return;
         }
 
+        if (editor is not null)
+        {
+            if (args.Key == Key.Escape)
+            {
+                if (this.keyboard.IsComposing)
+                {
+                    this.keyboard.CompleteComposition(); // Let WPF cancel composition first; do not navigate.
+                }
+                else if (!editor.BooleanInput.IsDropDownOpen)
+                {
+                    args.Handled = true;
+                    if (!args.IsRepeat)
+                    {
+                        this.FocusSurface.Focus();
+                    }
+                }
+            }
+
+            return; // Text, IME, navigation and standard shortcuts belong exclusively to the control.
+        }
+
         if (this.RunButton.IsKeyboardFocusWithin && RunControlOwnsKey(args.Key))
         {
             args.Handled = args.IsRepeat && args.Key is Key.Enter or Key.Space;
             if (!args.Handled && args.Key is Key.Enter or Key.Space)
             {
-                this.runInput = this.submission;
+                this.runInput.Begin();
             }
 
             return;
         }
 
+        contextual = this.RunButton.IsKeyboardFocusWithin || contextual;
         if (this.keyboard.TryTranslate(args.Key, args.SystemKey, Keyboard.Modifiers, args.IsRepeat,
             Keyboard.IsKeyDown(Key.RightAlt), contextual, out Disorderly.Routing.LogicalGesture gesture))
         {
@@ -358,7 +464,17 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         }
 
         this.disposing = true;
+        this.submission = null;
+        this.runInput.Clear();
+        this.RunButton.ReleaseMouseCapture();
+        if (this.IsKeyboardFocusWithin)
+        {
+            Keyboard.ClearFocus();
+        }
+
+        this.runInput.Cancel(); // Native button capture/press has now been canceled, not retargeted.
         this.activationId = Guid.Empty;
+        this.ClearEditors();
         this.placementOperation?.Abort();
         this.source?.RemoveHook(this.HandleMessage);
         this.Deactivated -= this.OnDeactivated;

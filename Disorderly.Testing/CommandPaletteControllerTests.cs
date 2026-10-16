@@ -70,6 +70,7 @@ public class CommandPaletteControllerTests
         public event EventHandler<PaletteDismissEventArgs>? DismissRequested;
         public event EventHandler<PaletteGestureEventArgs>? GestureReceived;
         public event EventHandler<PaletteSubmissionEventArgs>? SubmissionRequested;
+        public event EventHandler<PaletteArgumentEditEventArgs>? ArgumentEdited;
         public PalettePresentation? Presentation { get; private set; }
         public bool FocusSucceeds { get; set; } = true;
         public int ResetCount { get; private set; }
@@ -88,6 +89,7 @@ public class CommandPaletteControllerTests
         }
 
         public void Hide() => this.HideCount++;
+        public void Edit(PaletteArgumentEditEventArgs args) => this.ArgumentEdited?.Invoke(this, args);
         public void RequestRun(PaletteSubmissionEventArgs args) => this.SubmissionRequested?.Invoke(this, args);
         public void Dispose() => this.DisposeCount++;
         public void Send(LogicalGesture gesture) => this.GestureReceived?.Invoke(this, new PaletteGestureEventArgs(this.Presentation!.ActivationId, gesture));

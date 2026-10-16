@@ -16,24 +16,25 @@ public interface IKeyboardTranslator
 public sealed class WpfGestureAdapter(IKeyboardTranslator? translator = null)
 {
     private readonly IKeyboardTranslator translator = translator ?? new WindowsKeyboardTranslator();
-    private bool composing;
 
-    public void BeginComposition() => this.composing = true;
-    public void CompleteComposition() => this.composing = false;
-    public void Reset() => this.composing = false;
+    public bool IsComposing { get; private set; }
+
+    public void BeginComposition() => this.IsComposing = true;
+    public void CompleteComposition() => this.IsComposing = false;
+    public void Reset() => this.IsComposing = false;
 
     public bool TryTranslate(Key key, Key systemKey, ModifierKeys modifiers, bool repeat, bool rightAltDown,
         bool contextualInput, out LogicalGesture gesture)
     {
         gesture = default;
-        if (this.composing && key == Key.Escape)
+        if (this.IsComposing && key == Key.Escape)
         {
             // Let WPF cancel composition, without also navigating the context.
-            this.composing = false;
+            this.IsComposing = false;
             return false;
         }
 
-        if (!contextualInput || repeat || this.composing || key is Key.ImeProcessed or Key.DeadCharProcessed
+        if (!contextualInput || repeat || this.IsComposing || key is Key.ImeProcessed or Key.DeadCharProcessed
             || (rightAltDown && modifiers.HasFlag(ModifierKeys.Control)))
         {
             return false;
@@ -85,7 +86,7 @@ public sealed class WpfGestureAdapter(IKeyboardTranslator? translator = null)
         KeyboardTranslation translation = this.translator.Translate(key);
         if (translation.IsDeadKey)
         {
-            this.composing = true;
+            this.IsComposing = true;
             return false;
         }
 
