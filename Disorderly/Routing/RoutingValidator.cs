@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using Disorderly.Domain;
 
 namespace Disorderly.Routing;
 
@@ -31,7 +32,7 @@ public sealed class RoutingValidator
         HashSet<string> bindingIds = new(StringComparer.Ordinal);
         foreach (ContextDefinition? proposed in configuration.Contexts.ToArray())
         {
-            if (proposed is null || !IsIdentifier(proposed.Id))
+            if (proposed is null || !StableIdentifier.IsValid(proposed.Id))
             {
                 diagnostics.Add(new(RoutingDiagnosticSeverity.Error, RoutingDiagnosticCode.InvalidIdentifier, "A context needs a valid stable identifier.", proposed?.Id));
                 continue;
@@ -56,7 +57,7 @@ public sealed class RoutingValidator
             this.ValidateBindings(context, bindingIds, diagnostics);
         }
 
-        if (!IsIdentifier(configuration.RootContextId))
+        if (!StableIdentifier.IsValid(configuration.RootContextId))
         {
             diagnostics.Add(new(RoutingDiagnosticSeverity.Error, RoutingDiagnosticCode.InvalidIdentifier, "Root needs a valid context identifier.", configuration.RootContextId));
         }
@@ -77,7 +78,7 @@ public sealed class RoutingValidator
             foreach (BindingDefinition binding in context.Bindings.OfType<BindingDefinition>())
             {
                 if (binding.Destination is BindingDestination.Context destination
-                    && IsIdentifier(destination.ContextId) && !contexts.ContainsKey(destination.ContextId))
+                    && StableIdentifier.IsValid(destination.ContextId) && !contexts.ContainsKey(destination.ContextId))
                 {
                     diagnostics.Add(new(RoutingDiagnosticSeverity.Error, RoutingDiagnosticCode.MissingContext, "The transition destination does not exist.", context.Id, binding.Id, binding.Gesture, destination.ContextId));
                 }
@@ -101,7 +102,7 @@ public sealed class RoutingValidator
                 continue;
             }
 
-            if (!IsIdentifier(binding.Id))
+            if (!StableIdentifier.IsValid(binding.Id))
             {
                 diagnostics.Add(new(RoutingDiagnosticSeverity.Error, RoutingDiagnosticCode.InvalidIdentifier, "A binding needs a valid stable identifier.", context.Id, binding.Id));
             }
@@ -110,7 +111,7 @@ public sealed class RoutingValidator
                 diagnostics.Add(new(RoutingDiagnosticSeverity.Error, RoutingDiagnosticCode.DuplicateBinding, "Binding identifiers must be globally unique.", context.Id, binding.Id));
             }
 
-            if (!IsIdentifier(binding.ContextId) || !StringComparer.Ordinal.Equals(binding.ContextId, context.Id))
+            if (!StableIdentifier.IsValid(binding.ContextId) || !StringComparer.Ordinal.Equals(binding.ContextId, context.Id))
             {
                 diagnostics.Add(new(RoutingDiagnosticSeverity.Error, RoutingDiagnosticCode.InvalidBindingOwner, "Binding owner must identify its containing context.", context.Id, binding.Id));
             }
@@ -135,16 +136,12 @@ public sealed class RoutingValidator
                 BindingDestination.Command destination => destination.CommandId,
                 _ => null,
             };
-            if (!IsIdentifier(destinationId))
+            if (!StableIdentifier.IsValid(destinationId))
             {
                 diagnostics.Add(new(RoutingDiagnosticSeverity.Error, RoutingDiagnosticCode.InvalidDestination, "Exactly one typed destination with a valid stable identifier is required.", context.Id, binding.Id, binding.Gesture, destinationId));
             }
         }
     }
-
-    private static bool IsIdentifier(string? identifier) => !string.IsNullOrEmpty(identifier)
-        && char.IsAsciiLetterOrDigit(identifier[0])
-        && identifier.All(static character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':');
 
     private static void ValidateGraph(Dictionary<string, string[]> edges, Dictionary<string, ContextDefinition> contexts, string? rootId, List<RoutingDiagnostic> diagnostics)
     {

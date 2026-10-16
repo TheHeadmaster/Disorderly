@@ -23,9 +23,22 @@ This inventory describes code present in the repository, not a claim that all in
 
 Initial domain conventions: identifiers are case-sensitive ordinal ASCII tokens beginning with a letter/digit and continuing with letters/digits or `-`, `_`, `.`, `:`. Logical key identities are case-normalized invariantly: one non-whitespace, non-control Unicode scalar, or a named key (Escape, Tab, Backspace, Enter, Space, Delete, Insert, Home, End, PageUp, PageDown, arrows, F1–F24). Modifiers are Control, Shift, Alt and Meta flags; order does not matter, unknown bits are invalid. The engine does not infer modifiers from character output or map physical keys to symbols. Extending supported key names does not change routing semantics. Only unmodified Escape is reserved by default; additional exact reservations may be supplied to validation for future interaction modes.
 
-Proposals remain caller-owned and must not be mutated during validation. Published snapshots copy/freeze their collections. Publication exchanges a complete snapshot atomically; routing sessions themselves are owned by one interaction thread. Command IDs remain opaque syntax-validated references until the command registry exists. A command request carries command, binding and invoking-context IDs so later command infrastructure can resolve presets and completion policy without duplicating definitions. No argument schema is introduced.
+Proposals remain caller-owned and must not be mutated during validation. Published snapshots copy/freeze their collections. Publication exchanges a complete snapshot atomically; routing sessions themselves are owned by one interaction thread. The standalone routing validator continues to accept opaque, syntax-validated command references. Command Model I validates them against the associated catalog at the combined publication boundary. A command request carries command, binding and invoking-context IDs so later command infrastructure can resolve presets and completion policy without duplicating definitions. No argument schema is introduced.
 
-**Still Deferred:** WPF palette integration and actual contextual keyboard handling, the command registry/execution implementations, binding configuration UI/persistence, editable arguments, suspended drafts, execution/operation infrastructure, file organization, journaling, recovery, Undo, Activity, notifications and command icon resolution. The current palette is a foundation visual, not a working command/search interface. Its lifecycle controller still combines visibility transitions with root presentation; a richer separation is future work, not an implemented capability.
+**Implemented — Command Model I:** The UI-independent `Disorderly.Commands` subsystem provides reusable definitions and an immutable catalog, typed parameter/argument contracts, command-binding presets, completion-policy resolution, icon metadata, invocation/attempt identity and execution-ready preparation. `CommandConfigurationStore` validates and atomically publishes a compatible routing/catalog pair; `CommandInteraction` retains that pair and its routing session. Invalid replacements preserve the previous pair. Missing command references and invalid presets fail combined publication; standalone `RoutingConfigurationStore` remains independently usable with opaque references.
+
+Concrete domain conventions:
+
+- Command, context, binding and parameter IDs use the same shared ordinal ASCII identifier validator. Commands have their own identity domain; parameter IDs are scoped to their command. Duplicate display names remain permitted, and selection is by stable ID rather than by an ambiguous name.
+- Parameters retain declaration order. Catalog definitions enumerate by ordinal command ID. Argument assignments enumerate by ordinal parameter ID and preserve duplicates/malformed entries for structured diagnostics rather than silently overwriting them.
+- Values are explicit Text, Boolean, signed 64-bit Integer and Path records. Text/path equality compares retained text without filesystem canonicalization. Path values are opaque text, structurally nonblank and NUL-free; no path resolution, existence check, association lookup or image loading occurs. Empty text, false and zero are present values. Missing required values produce Incomplete; malformed, unknown, duplicate or incompatible assignments produce Invalid. Both block execution-ready preparation.
+- Presets and optional completion overrides belong only to typed command destinations. Presets can omit required parameters. No preset locking/editability or automatic argument-merge policy is established. `WithArguments` is immutable state replacement retaining invocation identity; a future editor is responsible for any editing authorization.
+- Completion resolves Binding override → Command default → Dismiss. A direct selection has an explicit Direct origin without a fabricated binding or context; contextual selection captures its binding/context IDs from the associated snapshot. Preparing a request does not navigate, dismiss or change focus.
+- Icon metadata uses Automatic by default, CustomFile(path) or BuiltIn(identifier). Definition validation checks metadata structure only. Missing resources are not checked and cannot block domain readiness; eventual presentation fallback remains separate from execution behavior.
+- Invocation and attempt identities are independent nonempty GUIDs. Constructing or revising an invocation creates no attempt. An explicit `PrepareAttempt` call creates a new identified request only for a valid invocation; requests retain the immutable invocation version and catalog interpretation. This does not execute anything, automatically retry, or enforce submission deduplication. The future submission controller/executor must ensure single acceptance and manage repeated confirmations.
+- Invocation preparation distinguishes failure to resolve a command/origin from a successfully constructed but Incomplete/Invalid invocation. Definition snapshots and argument sets copy/freeze caller collections; callers must not mutate proposals while they are being validated. New interactions use the latest successful pair; existing interactions and invocations never retrieve a newer catalog or binding midway through preparation. Execution-ready means the declared domain contract is satisfied, not that future execution-time resource checks or authorization have occurred.
+
+**Still Deferred:** Actual command handlers/execution, process launching, filesystem commands, WPF palette integration and keyboard-to-gesture adaptation, typed command search, guided/inline parameter editors, binding/configuration UI and persistence, suspended drafts, Activity/operation management, background scheduling, SQLite journaling/recovery, Undo, and icon extraction/rendering. The current palette is still a foundation visual, not a working command/search interface. Its lifecycle controller remains unchanged; richer interaction integration is future work.
 
 ## Glossary
 
@@ -738,9 +751,9 @@ Icon metadata does not define the identity or behavior of a command.
 
 ## Deferred Features and Implementation Boundaries
 
-The following remain **Settled** and **Deferred** after Context Routing I; they are not currently implemented:
+The following remain **Settled** and **Deferred** after Command Model I; they are not currently implemented:
 
-- Contextual command registry and binding editor.
+- Actual command handlers/execution, typed command search and the binding editor.
 - WPF integration of the implemented context graph, navigation stack and routing engine.
 - Command discovery and typed argument editing.
 - Suspended invocation drafts.
@@ -752,7 +765,7 @@ The following remain **Settled** and **Deferred** after Context Routing I; they 
 - Undo infrastructure.
 - Activity and notifications.
 - Automatic application icon resolution.
-- User-configurable icon overrides.
+- User-facing icon customization, extraction and rendering (icon metadata is implemented).
 - Future parallel file mutation on independent resources.
 
 Describing these features in this specification does not make them implemented.
@@ -776,4 +789,4 @@ This roadmap is illustrative. It must not override the settled architectural con
 
 ## Unsettled Details and Future Design Work
 
-Context Routing I implements the routing contracts without settling the remaining deferred subsystems. This baseline leaves concrete configuration/storage schemas, scheduling time slices or fairness quotas, and the eventual filesystem mechanisms to later design and implementation checkpoints under the contracts above. Durable draft persistence and independent-resource parallel mutation are approved enhancements with explicitly deferred implementation, not unresolved alternatives to the initial in-memory and serialized strategies.
+Context Routing I and Command Model I implement their domain contracts without settling the remaining deferred subsystems. This baseline leaves concrete configuration/storage schemas, scheduling time slices or fairness quotas, and the eventual filesystem mechanisms to later design and implementation checkpoints under the contracts above. Durable draft persistence and independent-resource parallel mutation are approved enhancements with explicitly deferred implementation, not unresolved alternatives to the initial in-memory and serialized strategies.

@@ -24,7 +24,9 @@ The key invariants are:
 
 **Implemented — Context Routing I:** A UI-independent engine in `Disorderly/Routing` with routing domain models, context-local bindings, a reusable acyclic graph, navigation stack, structured validation, immutable configuration snapshots and typed routing outcomes. It can be exercised directly in NUnit without windows or native hotkeys. Contextual shortcuts are **not connected to the user-facing palette yet**.
 
-**Planned, not implemented:** WPF routing integration and actual contextual keyboard handling, the command registry/execution and argument editing, binding configuration UI/persistence, multiple resumable drafts (initially in memory), interactive organization sessions, background scheduling, SQLite journaling/recovery, Undo, Activity/notifications and command icon resolution. Settled design approval is not an implementation claim; the specification distinguishes Implemented, Deferred and Unsettled work.
+**Implemented — Command Model I:** A UI-independent command catalog with reusable definitions, typed required/optional parameters and arguments, binding presets, completion policies, icon metadata, immutable invocation/attempt contracts and compatible routing/catalog snapshots. Validation can prepare an execution-ready request, but no handler executes it and the palette cannot invoke commands yet.
+
+**Planned, not implemented:** Actual command execution/process launching/filesystem commands, WPF integration and keyboard-to-gesture adaptation, typed search and parameter editors, configuration persistence/management UI, draft restoration, Activity/operations, background scheduling, SQLite journaling/recovery, Undo and icon extraction/rendering.
 
 ## Build and automated validation
 

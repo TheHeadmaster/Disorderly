@@ -1,3 +1,5 @@
+using Disorderly.Commands;
+
 namespace Disorderly.Routing;
 
 /// <summary>Caller-owned proposal data; do not mutate its collections during validation.</summary>
@@ -13,5 +15,8 @@ public abstract record BindingDestination
     private protected BindingDestination() { }
 
     public sealed record Context(string ContextId) : BindingDestination;
-    public sealed record Command(string CommandId) : BindingDestination;
+    public sealed record Command(string CommandId) : BindingDestination
+    {
+        public CommandBindingMetadata? Metadata { get; init; }
+    }
 }
