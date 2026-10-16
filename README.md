@@ -1,6 +1,28 @@
 # Disorderly
 
-A tray-resident WPF utility on .NET 10. Foundation I adds a root command palette, opened with **Ctrl+Shift+D** or **Open Command Palette** in the tray menu. No commands, search, shortcuts beyond activation/Escape, or saved drafts are implemented yet.
+Disorderly is a Windows utility intended to combine two complementary capabilities:
+
+- A user-configurable contextual command/hotkey launcher for navigating shortcuts, selecting commands and entering arguments.
+- Incremental, interruption-friendly file organization that can pause for decisions and resume safely.
+
+## Architecture and Design
+
+The authoritative specification is [Architecture and Design Decisions](docs/design-decisions.md). It records the settled contracts, implementation boundaries, glossary and an illustrative checkpoint roadmap.
+
+The key invariants are:
+
+- Exactly one global activation hotkey; all contextual bindings operate inside Disorderly's focused interface.
+- Explicit context transitions with strict local bindings, stable identities and a navigation stack recording the actual path.
+- Every hidden activation opens at Root. Planned Resume suggestions restore drafts only on explicit selection, without executing them.
+- Invocation drafts and accepted operations have different lifecycles; dismissing UI does not inherently cancel unfinished work.
+- Initially, only one file-mutating step executes globally. Manual Resume receives bounded priority with fairness; future independent-resource parallelism must preserve the same safety contracts.
+- Awaiting Input stops the entire operation. Cancellation preserves completed changes; Undo is a separate operation.
+- Revalidate filesystem identity and state at the point of use and across waits; use appropriate atomic/handle-based safeguards and verify actual outcomes.
+- Durable operation intent belongs in a SQLite journal, distinct from diagnostics. Uncertain outcomes require reconciliation; mutating work requires explicit Resume after restart.
+
+**Implemented today — Foundation I:** A tray-resident .NET 10 WPF application with a compact root palette, provisional **Ctrl+Shift+D** activation, **Open Command Palette** in the tray menu, focus/dismissal handling and per-monitor DPI-aware positioning.
+
+**Planned, not implemented:** Contextual routing, command discovery and arguments, multiple resumable drafts (initially in memory), interactive organization sessions, background scheduling, SQLite journaling/recovery, Undo, Activity/notifications and command icon resolution. Settled design approval is not an implementation claim; the specification distinguishes Implemented, Deferred and Unsettled work.
 
 ## Build and automated validation
 
