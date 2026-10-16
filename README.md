@@ -22,7 +22,9 @@ The key invariants are:
 
 **Implemented today — Foundation I:** A tray-resident .NET 10 WPF application with a compact root palette, provisional **Ctrl+Shift+D** activation, **Open Command Palette** in the tray menu, focus/dismissal handling and per-monitor DPI-aware positioning.
 
-**Planned, not implemented:** Contextual routing, command discovery and arguments, multiple resumable drafts (initially in memory), interactive organization sessions, background scheduling, SQLite journaling/recovery, Undo, Activity/notifications and command icon resolution. Settled design approval is not an implementation claim; the specification distinguishes Implemented, Deferred and Unsettled work.
+**Implemented — Context Routing I:** A UI-independent engine in `Disorderly/Routing` with routing domain models, context-local bindings, a reusable acyclic graph, navigation stack, structured validation, immutable configuration snapshots and typed routing outcomes. It can be exercised directly in NUnit without windows or native hotkeys. Contextual shortcuts are **not connected to the user-facing palette yet**.
+
+**Planned, not implemented:** WPF routing integration and actual contextual keyboard handling, the command registry/execution and argument editing, binding configuration UI/persistence, multiple resumable drafts (initially in memory), interactive organization sessions, background scheduling, SQLite journaling/recovery, Undo, Activity/notifications and command icon resolution. Settled design approval is not an implementation claim; the specification distinguishes Implemented, Deferred and Unsettled work.
 
 ## Build and automated validation
 

@@ -19,7 +19,13 @@ Disorderly combines a user-configurable contextual command/hotkey launcher with 
 
 This inventory describes code present in the repository, not a claim that all interactive Windows scenarios have been manually verified. Build instructions and runtime checks remain in the [README](../README.md).
 
-**Deferred beyond Foundation I:** The contextual command engine, navigation graph, command registry, editable arguments, suspended drafts, execution/operation infrastructure, file organization, journaling, recovery, Undo, Activity, notifications and command icon resolution. The current palette is a foundation visual, not a working command/search interface. Its lifecycle controller still combines visibility transitions with root presentation; a richer separation is future work, not an implemented capability.
+**Implemented — Context Routing I:** The UI-independent `Disorderly.Routing` subsystem provides stable context/binding identities, typed context/opaque-command destinations, canonical logical gestures, context-local resolution, a reusable acyclic context graph, path-based navigation, structured validation errors/warnings, immutable snapshots, atomic publication and typed routing outcomes. Active sessions retain their original snapshot; a newly created session uses the latest successful publication. Available bindings are enumerated deterministically in canonical-gesture then binding-ID ordinal order.
+
+Initial domain conventions: identifiers are case-sensitive ordinal ASCII tokens beginning with a letter/digit and continuing with letters/digits or `-`, `_`, `.`, `:`. Logical key identities are case-normalized invariantly: one non-whitespace, non-control Unicode scalar, or a named key (Escape, Tab, Backspace, Enter, Space, Delete, Insert, Home, End, PageUp, PageDown, arrows, F1–F24). Modifiers are Control, Shift, Alt and Meta flags; order does not matter, unknown bits are invalid. The engine does not infer modifiers from character output or map physical keys to symbols. Extending supported key names does not change routing semantics. Only unmodified Escape is reserved by default; additional exact reservations may be supplied to validation for future interaction modes.
+
+Proposals remain caller-owned and must not be mutated during validation. Published snapshots copy/freeze their collections. Publication exchanges a complete snapshot atomically; routing sessions themselves are owned by one interaction thread. Command IDs remain opaque syntax-validated references until the command registry exists. A command request carries command, binding and invoking-context IDs so later command infrastructure can resolve presets and completion policy without duplicating definitions. No argument schema is introduced.
+
+**Still Deferred:** WPF palette integration and actual contextual keyboard handling, the command registry/execution implementations, binding configuration UI/persistence, editable arguments, suspended drafts, execution/operation infrastructure, file organization, journaling, recovery, Undo, Activity, notifications and command icon resolution. The current palette is a foundation visual, not a working command/search interface. Its lifecycle controller still combines visibility transitions with root presentation; a richer separation is future work, not an implemented capability.
 
 ## Glossary
 
@@ -29,9 +35,9 @@ This inventory describes code present in the repository, not a claim that all in
 | Binding | A normalized gesture in one context, with exactly one destination: a command invocation or another context. It may supply preset command arguments. |
 | Command definition | Reusable metadata and an execution contract describing a command, independent of a particular invocation. |
 | Command invocation | One stably identified use of a command with its arguments and invoking context. Execution attempts have their own identities. |
-| Invocation draft | An unfinished invocation or meaningful partial command/search input, suspended before accepted work begins execution. |
+| Invocation draft | An unfinished invocation or meaningful partial command/search input, suspended before work is accepted for execution. |
 | Navigation stack | The actual sequence of context entries followed in the current interaction; it determines backward navigation. |
-| Operation | Accepted work that has begun execution and may continue independently of palette visibility. |
+| Operation | Work accepted for execution, even if its first step has not started; it may continue independently of palette visibility. |
 | Operation step | A unit of operation work with relevant validation, effects, verification and recording. A file-mutating step owns the mutation slot through necessary safe finalization/cleanup. |
 | Safe checkpoint | A boundary at which an operation can safely pause, honor cancellation or yield scheduling ownership without abandoning an unsafe mutation. |
 | Input request | An identified, operation-linked outstanding request for a user decision; responses are accepted only while it remains valid. |
@@ -360,7 +366,7 @@ Closing or unfocusing an interactive window does not inherently cancel its opera
 
 An unfinished command invocation is a draft.
 
-Accepted work that has begun execution is an operation.
+Work becomes an operation once accepted for execution, even if its first step has not started (Queued).
 
 Do not conflate these lifecycles.
 
@@ -732,10 +738,10 @@ Icon metadata does not define the identity or behavior of a command.
 
 ## Deferred Features and Implementation Boundaries
 
-The following are **Settled** and **Deferred** beyond Foundation I; they are not currently implemented:
+The following remain **Settled** and **Deferred** after Context Routing I; they are not currently implemented:
 
 - Contextual command registry and binding editor.
-- Context transition graph and navigation stack.
+- WPF integration of the implemented context graph, navigation stack and routing engine.
 - Command discovery and typed argument editing.
 - Suspended invocation drafts.
 - Durable draft persistence.
@@ -770,4 +776,4 @@ This roadmap is illustrative. It must not override the settled architectural con
 
 ## Unsettled Details and Future Design Work
 
-No additional architectural choice is settled by this documentation checkpoint. This baseline leaves concrete configuration/storage schemas, scheduling time slices or fairness quotas, and the eventual filesystem mechanisms to later design and implementation checkpoints under the contracts above. Durable draft persistence and independent-resource parallel mutation are approved enhancements with explicitly deferred implementation, not unresolved alternatives to the initial in-memory and serialized strategies.
+Context Routing I implements the routing contracts without settling the remaining deferred subsystems. This baseline leaves concrete configuration/storage schemas, scheduling time slices or fairness quotas, and the eventual filesystem mechanisms to later design and implementation checkpoints under the contracts above. Durable draft persistence and independent-resource parallel mutation are approved enhancements with explicitly deferred implementation, not unresolved alternatives to the initial in-memory and serialized strategies.
