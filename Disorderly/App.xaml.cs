@@ -80,7 +80,7 @@ public partial class App : Application
         base.OnStartup(args);
 
         Initialize();
-        this.paletteController = new CommandPaletteController(new CommandPaletteWindow());
+        this.paletteController = new CommandPaletteController(new CommandPaletteWindow(), PaletteConfiguration.CreateEmptyStore());
         TrayIconHandler.Initialize(() => this.Dispatcher.BeginInvoke(new Action(() => this.paletteController.Open())));
         this.hotkeyService = new GlobalHotkeyService(new WindowsHotkeyRegistration());
         this.hotkeyService.Activated += this.OnHotkeyActivated;

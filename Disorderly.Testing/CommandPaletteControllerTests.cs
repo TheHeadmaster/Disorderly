@@ -1,4 +1,5 @@
 using Disorderly.Services;
+using Disorderly.Routing;
 using NUnit.Framework;
 
 namespace Disorderly.Testing;
@@ -13,7 +14,7 @@ public class CommandPaletteControllerTests
         using CommandPaletteController controller = new(view);
         Assert.That(controller.State, Is.EqualTo(PaletteState.Hidden));
         controller.Toggle();
-        Assert.That(controller.State, Is.EqualTo(PaletteState.VisibleAtRoot));
+        Assert.That(controller.State, Is.EqualTo(PaletteState.Visible));
         controller.Open();
         Assert.That(view.ShowCount, Is.EqualTo(1));
         controller.Toggle();
@@ -31,7 +32,8 @@ public class CommandPaletteControllerTests
         FakeView view = new();
         using CommandPaletteController controller = new(view);
         controller.Open();
-        view.RequestDismiss();
+        if (reason == "Escape at root") { view.Send(LogicalGesture.Escape); }
+        else { view.RequestDismiss(); }
         Assert.That(controller.State, Is.EqualTo(PaletteState.Hidden), reason);
         Assert.That(view.HideCount, Is.EqualTo(1));
         Assert.That(view.DisposeCount, Is.Zero);
@@ -48,7 +50,7 @@ public class CommandPaletteControllerTests
         Assert.That(controller.State, Is.EqualTo(PaletteState.Hidden));
         view.FocusSucceeds = true;
         controller.Open();
-        Assert.That(controller.State, Is.EqualTo(PaletteState.VisibleAtRoot));
+        Assert.That(controller.State, Is.EqualTo(PaletteState.Visible));
     }
 
     [Test]
@@ -65,13 +67,19 @@ public class CommandPaletteControllerTests
 
     private sealed class FakeView : ICommandPaletteView
     {
-        public event EventHandler? DismissRequested;
+        public event EventHandler<PaletteDismissEventArgs>? DismissRequested;
+        public event EventHandler<PaletteGestureEventArgs>? GestureReceived;
+        public PalettePresentation? Presentation { get; private set; }
         public bool FocusSucceeds { get; set; } = true;
         public int ResetCount { get; private set; }
         public int ShowCount { get; private set; }
         public int HideCount { get; private set; }
         public int DisposeCount { get; private set; }
-        public void ResetRoot() => this.ResetCount++;
+        public void Render(PalettePresentation presentation)
+        {
+            if (this.Presentation?.ActivationId != presentation.ActivationId) { this.ResetCount++; }
+            this.Presentation = presentation;
+        }
         public bool ShowAtForegroundMonitor()
         {
             this.ShowCount++;
@@ -80,6 +88,7 @@ public class CommandPaletteControllerTests
 
         public void Hide() => this.HideCount++;
         public void Dispose() => this.DisposeCount++;
-        public void RequestDismiss() => this.DismissRequested?.Invoke(this, EventArgs.Empty);
+        public void Send(LogicalGesture gesture) => this.GestureReceived?.Invoke(this, new PaletteGestureEventArgs(this.Presentation!.ActivationId, gesture));
+        public void RequestDismiss() => this.DismissRequested?.Invoke(this, new PaletteDismissEventArgs(this.Presentation!.ActivationId));
     }
 }
