@@ -5,6 +5,26 @@ public readonly record struct PixelBounds(int X, int Y, int Width, int Height);
 
 public static class PalettePlacement
 {
+    /// <summary>
+    /// Prepares DPI only while hidden, then measures in DIPs and applies one final pixel rectangle.
+    /// The callbacks keep the native operation sequence testable without foreground-window privileges.
+    /// </summary>
+    public static void Position(bool isVisible, PixelBounds work, Func<double> getScale, Func<double, double, double> measureHeight, Action<PixelBounds> place)
+    {
+        if (!isVisible)
+        {
+            // Restrict the temporary relocation to hidden HWNDs. Its DPI is read only afterward.
+            place(new PixelBounds(work.X, work.Y, 1, 1));
+        }
+
+        double scale = getScale();
+        PixelBounds available = Calculate(work, 360, work.Height / scale, scale, scale);
+        double width = available.Width / scale;
+        double maxHeight = available.Height / scale;
+        double height = Math.Clamp(measureHeight(width, maxHeight), Math.Min(1, maxHeight), maxHeight);
+        place(Calculate(work, width, height, scale, scale));
+    }
+
     /// <summary>Converts DIP dimensions/margin only; never scales the virtual desktop origin.</summary>
     public static PixelBounds Calculate(PixelBounds work, double widthDip, double heightDip, double scaleX, double scaleY, double marginDip = 16)
     {

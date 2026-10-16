@@ -1,8 +1,6 @@
-using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Interop;
 using Disorderly.Utilities;
@@ -25,8 +23,6 @@ public class BorderlessWindow : Window
 
     private Point positionBeforeDrag;
 
-    private Point previousScreenBounds;
-
     static BorderlessWindow()
     {
         DefaultStyleKeyProperty.OverrideMetadata(typeof(BorderlessWindow), new FrameworkPropertyMetadata(typeof(BorderlessWindow)));
@@ -36,7 +32,6 @@ public class BorderlessWindow : Window
     {
         this.SizeChanged += this.OnSizeChanged;
         this.StateChanged += this.OnStateChanged;
-        this.Loaded += this.OnLoaded;
         this.Closed += this.OnClosed;
         this.AddHandler(MouseLeftButtonUpEvent, new MouseButtonEventHandler(this.OnMouseButtonUp), true);
         this.AddHandler(MouseMoveEvent, new MouseEventHandler(this.OnMouseMove));
@@ -67,14 +62,6 @@ public class BorderlessWindow : Window
     private void MaximizeButton_Click(object sender, RoutedEventArgs args) => this.ToggleWindowState();
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs args) => this.WindowState = WindowState.Minimized;
-
-    private void OnLoaded(object sender, RoutedEventArgs args)
-    {
-        Screen screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
-        double width = screen.WorkingArea.Width;
-        Rectangle workingArea = screen.WorkingArea;
-        this.previousScreenBounds = new Point(width, workingArea.Height);
-    }
 
     private void OnMouseButtonUp(object sender, MouseButtonEventArgs args)
     {
@@ -126,19 +113,6 @@ public class BorderlessWindow : Window
         {
             this.HeightBeforeMaximize = this.ActualHeight;
             this.WidthBeforeMaximize = this.ActualWidth;
-            return;
-        }
-
-        if (this.WindowState == WindowState.Maximized)
-        {
-            Screen screen = Screen.FromHandle(new WindowInteropHelper(this).Handle);
-            if (this.previousScreenBounds.X != screen.WorkingArea.Width || this.previousScreenBounds.Y != screen.WorkingArea.Height)
-            {
-                double width = screen.WorkingArea.Width;
-                Rectangle workingArea = screen.WorkingArea;
-                this.previousScreenBounds = new Point(width, workingArea.Height);
-                this.RefreshWindowState();
-            }
         }
     }
 
@@ -156,24 +130,17 @@ public class BorderlessWindow : Window
         {
             DesktopNative.MonitorInfo monitor = DesktopNative.GetMonitor(DesktopNative.MonitorFromWindow(hwnd, 2));
             DesktopNative.MinMaxInfo info = Marshal.PtrToStructure<DesktopNative.MinMaxInfo>(lParam);
-            info.MaxPosition.X = monitor.Work.Left - monitor.Monitor.Left;
-            info.MaxPosition.Y = monitor.Work.Top - monitor.Monitor.Top;
-            info.MaxSize.X = monitor.Work.Right - monitor.Work.Left;
-            info.MaxSize.Y = monitor.Work.Bottom - monitor.Work.Top;
+            PixelBounds bounds = MaximizedBounds.Calculate(monitor.Monitor.Bounds, monitor.Work.Bounds);
+            info.MaxPosition.X = bounds.X;
+            info.MaxPosition.Y = bounds.Y;
+            info.MaxSize.X = bounds.Width;
+            info.MaxSize.Y = bounds.Height;
             Marshal.StructureToPtr(info, lParam, false);
             handled = true;
         }
-        else if (message is 0x02E0 or 0x007E or 0x001A)
-        {
-            // Leave WM_DPICHANGED to WPF; refresh maximize geometry after it processes the change.
-            this.Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (this.IsVisible)
-                {
-                    this.RefreshWindowState();
-                }
-            }));
-        }
+
+        // Leave DPI/display changes to Windows and WPF. Subsequent native sizing requests
+        // obtain fresh bounds above without restoring/remaximizing or changing restore geometry.
 
         return 0;
     }
@@ -231,15 +198,6 @@ public class BorderlessWindow : Window
             }
 
             NativeUtilities.PostMessageW(handle, 274, new nint(num1), nint.Zero);
-        }
-    }
-
-    private void RefreshWindowState()
-    {
-        if (this.WindowState == WindowState.Maximized)
-        {
-            this.ToggleWindowState();
-            this.ToggleWindowState();
         }
     }
 

@@ -38,7 +38,6 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         {
             this.PlaceOnMonitor(monitor);
             this.Show();
-            this.PlaceOnMonitor(monitor);
         }
         catch (Win32Exception error)
         {
@@ -71,29 +70,30 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         {
             PixelBounds work = DesktopNative.GetMonitor(monitor).Work.Bounds;
             nint handle = new WindowInteropHelper(this).Handle;
-            // Move the hidden HWND first so WPF receives the destination monitor's DPI.
-            DesktopNative.Place(handle, new PixelBounds(work.X, work.Y, 1, 1));
-            double scale = DesktopNative.GetDpiForWindow(handle) / 96.0;
-            if (scale <= 0)
-            {
-                scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-            }
-
-            PixelBounds available = PalettePlacement.Calculate(work, 360, work.Height / scale, scale, scale);
-            this.MaxWidth = available.Width / scale;
-            this.MaxHeight = available.Height / scale;
-            this.Width = Math.Min(360, this.MaxWidth);
-            this.UpdateLayout();
-            FrameworkElement content = (FrameworkElement)this.Content;
-            content.Measure(new Size(this.Width, this.MaxHeight));
-            double height = Math.Min(content.DesiredSize.Height, this.MaxHeight);
-            PixelBounds bounds = PalettePlacement.Calculate(work, this.Width, Math.Max(1, height), scale, scale);
-            DesktopNative.Place(handle, bounds);
+            PalettePlacement.Position(
+                this.IsVisible,
+                work,
+                () =>
+                {
+                    // Visible refreshes run after WPF handles WM_DPICHANGED on this monitor.
+                    double scale = DesktopNative.GetDpiForWindow(handle) / 96.0;
+                    return scale > 0 ? scale : VisualTreeHelper.GetDpi(this).DpiScaleX;
+                },
+                this.MeasurePaletteHeight,
+                bounds => DesktopNative.Place(handle, bounds));
         }
         finally
         {
             this.placing = false;
         }
+    }
+
+    private double MeasurePaletteHeight(double width, double maxHeight)
+    {
+        // Measure content without changing native geometry or WPF window-size properties.
+        FrameworkElement content = (FrameworkElement)this.Content;
+        content.Measure(new Size(width, maxHeight));
+        return content.DesiredSize.Height;
     }
 
     protected override void OnSourceInitialized(EventArgs args)
@@ -111,7 +111,8 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         }
 
         // WPF processes WM_DPICHANGED itself. Re-anchor after its layout and after display/work-area changes.
-        if ((message is 0x02E0 or 0x007E or 0x001A) && !this.placing && !this.placementQueued && this.IsVisible)
+        bool geometryChanged = (message is 0x02E0 or 0x007E) || (message == 0x001A && wParam == 0x002F); // SPI_SETWORKAREA
+        if (geometryChanged && !this.placing && !this.placementQueued && !this.disposing && this.IsVisible)
         {
             this.placementQueued = true;
             this.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
