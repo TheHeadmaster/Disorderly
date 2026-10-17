@@ -584,7 +584,9 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView, IDraftP
             return;
         }
 
-        contextual = this.RunButton.IsKeyboardFocusWithin || contextual;
+        // Draft action buttons own Tab/activation keys, but Escape still navigates the contextual Root.
+        contextual = (args.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+            || this.RunButton.IsKeyboardFocusWithin || contextual;
         if (this.keyboard.TryTranslate(args.Key, args.SystemKey, Keyboard.Modifiers, args.IsRepeat,
             Keyboard.IsKeyDown(Key.RightAlt), contextual, out Disorderly.Routing.LogicalGesture gesture))
         {
