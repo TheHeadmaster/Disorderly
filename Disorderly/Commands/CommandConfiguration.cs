@@ -60,7 +60,7 @@ public sealed class CommandConfigurationStore
 
     public CommandConfigurationSnapshot? Current => Volatile.Read(ref this.current);
 
-    public CommandConfigurationValidationResult Publish(RoutingConfiguration routing, IReadOnlyList<CommandDefinition> commands)
+    public CommandConfigurationValidationResult Validate(RoutingConfiguration routing, IReadOnlyList<CommandDefinition> commands)
     {
         RoutingValidationResult routingResult = this.routingValidator.Validate(routing);
         CommandCatalogValidationResult catalogResult = new CommandCatalogValidator().Validate(commands);
@@ -96,12 +96,18 @@ public sealed class CommandConfigurationStore
 
         CommandConfigurationSnapshot? snapshot = routingResult.IsValid && catalogResult.IsValid && diagnostics.Count == 0
             ? new CommandConfigurationSnapshot(routingResult.Snapshot!, catalogResult.Snapshot!) : null;
-        if (snapshot is not null)
+        return new CommandConfigurationValidationResult(diagnostics, routingResult.Diagnostics, snapshot);
+    }
+
+    public CommandConfigurationValidationResult Publish(RoutingConfiguration routing, IReadOnlyList<CommandDefinition> commands)
+    {
+        CommandConfigurationValidationResult result = this.Validate(routing, commands);
+        if (result.Snapshot is not null)
         {
-            Interlocked.Exchange(ref this.current, snapshot);
+            Interlocked.Exchange(ref this.current, result.Snapshot);
         }
 
-        return new CommandConfigurationValidationResult(diagnostics, routingResult.Diagnostics, snapshot);
+        return result;
     }
 
     public CommandInteraction CreateInteraction() => (this.Current ?? throw new InvalidOperationException("Publish a valid combined configuration before creating an interaction.")).CreateInteraction();

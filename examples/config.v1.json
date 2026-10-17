@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "rootContextId": "root",
+  "contexts": [
+    {
+      "id": "root",
+      "displayName": "Root",
+      "bindings": [
+        {
+          "id": "open-notepad-binding",
+          "gesture": {
+            "key": "N",
+            "modifiers": []
+          },
+          "destination": {
+            "kind": "command",
+            "commandId": "open-notepad",
+            "presets": [
+              {
+                "parameterId": "executable",
+                "type": "path",
+                "value": "C:\\Windows\\System32\\notepad.exe"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "id": "open-notepad",
+      "displayName": "Open Notepad",
+      "description": "Example only; launch requires explicit Run. Adjust the path for your installation.",
+      "parameters": [
+        {
+          "id": "executable",
+          "name": "Executable",
+          "type": "path",
+          "required": true
+        }
+      ],
+      "execution": {
+        "kind": "launch-executable",
+        "executableParameterId": "executable"
+      }
+    }
+  ]
+}

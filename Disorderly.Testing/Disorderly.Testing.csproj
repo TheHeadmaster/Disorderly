@@ -18,4 +18,7 @@
     <ItemGroup>
         <ProjectReference Include="../Disorderly/Disorderly.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <EmbeddedResource Include="../examples/config.v1.json" LogicalName="Disorderly.ExampleConfiguration.json" />
+    </ItemGroup>
 </Project>

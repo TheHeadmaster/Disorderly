@@ -1,5 +1,7 @@
 using System.IO;
 using System.Windows;
+using Disorderly.Configuration;
+using Disorderly.Domain;
 using Disorderly.Resolvers;
 using Disorderly.Services;
 using Disorderly.View;
@@ -18,6 +20,7 @@ public partial class App : Application
 {
     private CommandPaletteController? paletteController;
     private GlobalHotkeyService? hotkeyService;
+    private ConfigurationService? configuration;
 
     /// <summary>
     /// The list of directories used by the application.
@@ -75,17 +78,51 @@ public partial class App : Application
     }
 
     /// <inheritdoc />
-    protected override void OnStartup(StartupEventArgs args)
+    protected override async void OnStartup(StartupEventArgs args)
     {
         base.OnStartup(args);
 
         Initialize();
-        this.paletteController = new CommandPaletteController(new CommandPaletteWindow(), PaletteConfiguration.CreateEmptyStore());
-        TrayIconHandler.Initialize(() => this.Dispatcher.BeginInvoke(new Action(() => this.paletteController.Open())));
+        this.configuration = new ConfigurationService(PaletteConfiguration.CreateEmptyStore(), Path.Combine(AppMeta.AppDataDirectory, "config.json"));
+        this.paletteController = new CommandPaletteController(new CommandPaletteWindow(), this.configuration.Store);
+        TrayIconHandler.Initialize(() => this.Dispatcher.BeginInvoke(new Action(() => this.paletteController.Open())),
+            () => this.Dispatcher.BeginInvoke(new Action(async () => await this.ReloadConfigurationAsync())));
         this.hotkeyService = new GlobalHotkeyService(new WindowsHotkeyRegistration());
         this.hotkeyService.Activated += this.OnHotkeyActivated;
         this.hotkeyService.Start();
+        await this.ReloadConfigurationAsync();
     }
+
+    private async Task ReloadConfigurationAsync()
+    {
+        try
+        {
+            ConfigurationResult result = await this.configuration!.ReloadAsync();
+            Log.Information("Configuration reload: {Status}, revision {Revision}.", result.Status, result.Revision);
+            foreach (ConfigurationDiagnostic diagnostic in result.Diagnostics)
+            {
+                // Codes/known locations suffice; do not log documents, preset values or exception messages.
+                Log.Warning("Configuration diagnostic {Code} at {Location}; warning: {Warning}; context {ContextId}, binding {BindingId}, command {CommandId}, parameter {ParameterId}.",
+                    diagnostic.Code, diagnostic.Location, diagnostic.Warning, SafeDiagnosticId(diagnostic.Routing?.ContextId),
+                    SafeDiagnosticId(diagnostic.Routing?.BindingId ?? diagnostic.Command?.BindingId), SafeDiagnosticId(diagnostic.Command?.CommandId), SafeDiagnosticId(diagnostic.Command?.ParameterId));
+            }
+
+            if (!this.Dispatcher.HasShutdownStarted)
+            {
+                TrayIconHandler.SetConfigurationStatus(result.Summary);
+            }
+        }
+        catch (Exception error)
+        {
+            Log.Warning("Configuration reload raised {ExceptionType}.", error.GetType().Name);
+            if (!this.Dispatcher.HasShutdownStarted)
+            {
+                TrayIconHandler.SetConfigurationStatus("Reload failed; see log");
+            }
+        }
+    }
+
+    private static string? SafeDiagnosticId(string? id) => StableIdentifier.IsValid(id) ? id : null;
 
     private void OnHotkeyActivated(object? sender, EventArgs args) => this.paletteController?.Toggle();
 

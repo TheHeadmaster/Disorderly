@@ -8,8 +8,9 @@ namespace Disorderly.View;
 public static class TrayIconHandler
 {
     private static NotifyIcon? trayIcon;
+    private static ToolStripMenuItem? configurationStatus;
 
-    public static void Initialize(Action openPalette)
+    public static void Initialize(Action openPalette, Action? reloadConfiguration = null)
     {
         using Stream stream = Application.GetResourceStream(new("/Resources/Images/Disorderly.ico", UriKind.Relative)).Stream;
 
@@ -22,15 +23,27 @@ public static class TrayIconHandler
 
         trayIcon.DoubleClick += (_, _) => OpenMainDisorderlyWindow();
 
+        trayIcon.ContextMenuStrip = CreateMenu(openPalette, reloadConfiguration);
+    }
+
+    /// <summary>Builds the existing tray actions independently of native icon lifetime.</summary>
+    public static ContextMenuStrip CreateMenu(Action openPalette, Action? reloadConfiguration = null)
+    {
         ContextMenuStrip contextMenu = new();
 
         contextMenu.Items.Add("Open Command Palette", null, (_, _) => openPalette());
         contextMenu.Items.Add("Open Disorderly", null, (_, _) => OpenMainDisorderlyWindow());
+        ToolStripItem reload = contextMenu.Items.Add("Reload Configuration", null, (_, _) => reloadConfiguration?.Invoke());
+        reload.Enabled = reloadConfiguration is not null;
+        configurationStatus = new ToolStripMenuItem("Configuration: not loaded") { Enabled = false };
+        contextMenu.Items.Add(configurationStatus);
         contextMenu.Items.Add(new ToolStripSeparator());
         contextMenu.Items.Add("Exit", null, (_, _) => Application.Current.Shutdown());
 
-        trayIcon.ContextMenuStrip = contextMenu;
+        return contextMenu;
     }
+
+    public static void SetConfigurationStatus(string status) => configurationStatus?.Text = "Configuration: " + status;
 
     public static void Shutdown() => trayIcon?.Dispose();
 
