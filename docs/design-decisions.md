@@ -70,7 +70,22 @@ Meaningful restored work remains eligible even if immediately interrupted withou
 
 Root suggests the newest configuration-compatible draft. Incompatible drafts remain in the newest-first browser, where explicit Resume explains the blocked restoration; they do not steal unassigned Tab. If every draft is blocked, Root shows a non-sensitive explanation and Browse drafts remains available.
 
-**Still Deferred:** Preset editing/override policy, inline pills, guided prompting beyond this field editor, autocomplete/path completion, typed search, persistent drafts/configuration, configuration management, additional execution kinds/argument vectors, operations/scheduling/pause/cancel, SQLite journaling/recovery, filesystem mutation/file organization/Undo/Activity, icon extraction/customization and durable deduplication.
+**Implemented — Operation Infrastructure I:** `Disorderly.Operations` provides typed operation/step/input-request identities, immutable definitions/records, validated lifecycle transitions, explicit safe-segment execution, cooperative controls, identified blocking decisions, deterministic scheduling, a simulated mutation slot and immutable Activity. `OperationCoordinator` is the process-local store/scheduler/coordination boundary; no WPF dependency or automatic worker loop is introduced. `AcceptSimulation` is explicitly for injected simulated or side-effect-free runners. No production file-mutating handler can rely on this volatile acceptance boundary for crash safety; journaled intent/verification must precede later real execution. Existing process launches, invocation drafts and palette lifecycles are unchanged.
+
+Concrete implementation conventions (not new filesystem/product guarantees):
+
+- IDs are separate GUID-backed value types; invocation and attempt associations are optional metadata. Plans freeze ordered steps at acceptance and enforce distinct step identities. Accepted work starts Queued, even before any step is dispatched. Terminal and NeedsRecovery records cannot be ordinarily reopened. State mutation remains private and goes through `OperationTransitions`.
+- One short-held state lock protects transitions, request acceptance and dispatch reservations. Runner/eligibility callbacks and awaited work execute outside it. A separate asynchronous admission gate serializes eligibility/selection decisions so concurrent dispatch cannot exceed the fairness quota; it is released before runner execution, so non-mutating steps still overlap. A reserved operation cannot dispatch concurrently; only flagged simulated mutating steps use the exclusive slot. Non-mutating simulations may overlap.
+- Each runner task includes required finalization and reports an explicit safe checkpoint. Verified simulated completion advances step counts; no durable-effect status is claimed. MoreWork and AwaitInput continue the same identified step/segment with dispatch count and retained decision responses; they are not retries of failed/uncertain effects. Cancellation wins over pause at safe boundaries. AwaitInput preserves pause intent until the last response, then remains Paused. Known failures and uncertainty take precedence over control intents so neither cancellation nor pause disguises uncertain effects.
+- A FIFO enqueue sequence is refreshed after safe yielding. Explicit eligible Resume receives one consumable priority token. `manualResumeQuota` defaults to two priority dispatches before an eligible normal dispatch, and is constructor-configurable for this implementation. Tokens never accumulate and are consumed on dispatch. Automatic input resolution uses normal priority. Neither class bypasses eligibility or an occupied mutation slot.
+- Input requests have independent stable identities, owning operation IDs, safe kind/prompt metadata, copied typed Accept/Decline response choices and explicit lifecycle state. Response meanings are retained for the runner, not converted into global conflict policy. Duplicate, cross-operation, unsupported or obsolete responses are rejected. All outstanding decisions block the operation. Final resolution checks eligibility outside the state lock, with revision guards; `Reevaluate` revisits resource-blocked resolved input normally. Manual Resume and every dispatch also revalidate. The default validator only permits simulations, without filesystem checks or identity guarantees.
+- Pause/Cancel/Resume carry request GUIDs; duplicate accepted requests are idempotent and cannot be reinterpreted as another action. Control races cannot reopen terminal/canceled work. Safe cancellation stops subsequent steps and retains completed records; it does not undo them.
+- An unexpected runner exception or invalid/unverified outcome is conservatively NeedsRecovery, without automatic replay. Explicitly safe uncertain outcomes relinquish the slot; an unconfirmed safe boundary retains ownership and blocks mutating dispatch. No reconciliation/release API exists yet. Graceful shutdown consequently remains pending in that unsafe case, rather than silently abandoning finalization. `RequestShutdownAsync` otherwise stops admission/dispatch and cooperatively waits for safe checkpoints without arbitrary timeouts. The existing application is not wired to production operations.
+- Activity is a deterministic immutable projection, with revisioned ordered notifications outside state locks, observer exception isolation and factual verified/total counts (or an unknown total). Consumers marshal to their own dispatcher; Activity does not depend on palette visibility. Records, input history and unresolved recovery state remain in memory for process lifetime, without expiration. There is no persistence, durable acceptance or crash-recovery claim.
+
+**Next intended workstream:** User Configuration I, exposing authoring of existing validated definitions, contexts, bindings and presets. It is not part of Operation Infrastructure I.
+
+**Still Deferred:** Preset editing/override policy, inline pills, guided prompting beyond this field editor, autocomplete/path completion, typed search, persistent drafts/configuration, configuration management, additional execution kinds/argument vectors, production operation handlers and Activity UI, SQLite journaling/recovery, filesystem mutation/file organization/Undo, icon extraction/customization and durable deduplication.
 
 ## Glossary
 
@@ -498,7 +513,7 @@ A blocked operation automatically becoming runnable after input resolution uses 
 
 This baseline does not prescribe scheduling time slices or numeric quotas.
 
-Those implementation details remain to be settled when the scheduler is built.
+Operation Infrastructure I uses a configurable quota of two manual-resume dispatches before an eligible normal dispatch. This local implementation parameter does not settle a permanent product quota; production tuning and scheduling time slices remain future work.
 
 ---
 
@@ -783,17 +798,17 @@ Icon metadata does not define the identity or behavior of a command.
 
 ## Deferred Features and Implementation Boundaries
 
-The following remain **Settled** and **Deferred** after Draft Management I; they are not currently implemented:
+The following remain **Settled** and **Deferred** after Operation Infrastructure I; they are not currently implemented:
 
 - Execution kinds beyond direct executable launching, typed command search and the binding editor.
 - Command discovery, parameter pills, autocomplete and guided prompting beyond the initial field editor.
 - Durable draft persistence.
 - Interactive organization sessions.
-- Background operation scheduler.
+- Production background-operation handlers and integration (the simulated process-local scheduler is implemented).
 - SQLite operation journal.
 - Crash recovery and reconciliation.
 - Undo infrastructure.
-- Activity and notifications.
+- User-facing Activity window and notifications (the immutable Activity domain is implemented).
 - Automatic application icon resolution.
 - User-facing icon customization, extraction and rendering (icon metadata is implemented).
 - Future parallel file mutation on independent resources.
@@ -819,4 +834,4 @@ This roadmap is illustrative. It must not override the settled architectural con
 
 ## Unsettled Details and Future Design Work
 
-Context Routing I and Command Model I implement their domain contracts without settling the remaining deferred subsystems. This baseline leaves concrete configuration/storage schemas, scheduling time slices or fairness quotas, and the eventual filesystem mechanisms to later design and implementation checkpoints under the contracts above. Durable draft persistence and independent-resource parallel mutation are approved enhancements with explicitly deferred implementation, not unresolved alternatives to the initial in-memory and serialized strategies.
+Context Routing I and Command Model I implement their domain contracts without settling the remaining deferred subsystems. This baseline leaves concrete configuration/storage schemas, production scheduling time slices and quota tuning, and the eventual filesystem mechanisms to later design and implementation checkpoints under the contracts above. Durable draft persistence and independent-resource parallel mutation are approved enhancements with explicitly deferred implementation, not unresolved alternatives to the initial in-memory and serialized strategies.
