@@ -316,4 +316,19 @@ public class ConfigurationEditorTests
         Assert.That(launcher.Calls, Is.Empty);
         Assert.That(operations.Operations, Is.Empty);
     }
+
+    [Test]
+    public async Task UnknownRemovalDoesNotMutateAndDiscardInvalidatesOldSessionEvents()
+    {
+        (_, ConfigurationEditorSession editor, _) = await Create();
+        ConfigurationEditToken old = editor.Token;
+        Assert.That(editor.RemoveNewCommand(old, "unknown"), Is.False);
+        Assert.That(editor.RemoveNewContext(old, "unknown"), Is.False);
+        Assert.That(editor.RemoveBinding(old, "root", "unknown"), Is.False);
+        Assert.That(editor.IsDirty, Is.False);
+        editor.AddCommand(old, new("new", "New", []));
+        editor.AdoptPublished(true);
+        Assert.That(editor.AddCommand(old, new("stale", "Stale", [])), Is.False);
+        Assert.That(editor.IsDirty, Is.False);
+    }
 }

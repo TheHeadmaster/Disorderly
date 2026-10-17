@@ -594,6 +594,7 @@ public partial class MainWindow : Window
         bool consent = !this.Editor.IsDirty || MessageBox.Show(this, "Discard all unsaved configuration edits and adopt the current published configuration?", "Discard Changes", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
         if (this.Editor.AdoptPublished(consent))
         {
+            this.BuildNewForms();
             this.CommandDetails.Children.Clear();
             this.ContextDetails.Children.Clear();
             this.RefreshLists();

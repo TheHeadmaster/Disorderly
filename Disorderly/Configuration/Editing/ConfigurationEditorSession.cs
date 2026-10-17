@@ -131,7 +131,7 @@ public sealed class ConfigurationEditorSession
 
     public bool RemoveBinding(ConfigurationEditToken token, string contextId, string bindingId)
     {
-        if (!this.Accepts(token))
+        if (!this.Accepts(token) || !this.Document.Routing.Contexts.Any(context => context.Id == contextId && context.Bindings.Any(binding => binding.Id == bindingId)))
         {
             return false;
         }
@@ -144,7 +144,7 @@ public sealed class ConfigurationEditorSession
     // Persisted definition deletion is deliberately deferred. Newly created, unreferenced items can be corrected.
     public bool RemoveNewCommand(ConfigurationEditToken token, string id)
     {
-        if (!this.Accepts(token) || this.baseline.Catalog.Find(id)is not null || this.Document.Routing.Contexts.SelectMany(item => item.Bindings).Any(binding => binding.Destination is BindingDestination.Command command && command.CommandId == id))
+        if (!this.Accepts(token) || !this.Document.Commands.Any(item => item.Id == id) || this.baseline.Catalog.Find(id)is not null || this.Document.Routing.Contexts.SelectMany(item => item.Bindings).Any(binding => binding.Destination is BindingDestination.Command command && command.CommandId == id))
         {
             return false;
         }
@@ -160,7 +160,7 @@ public sealed class ConfigurationEditorSession
 
     public bool RemoveNewContext(ConfigurationEditToken token, string id)
     {
-        if (!this.Accepts(token) || id == this.Document.Routing.RootContextId || this.baseline.Routing.Contexts.Any(item => item.Id == id) || this.Document.Routing.Contexts.SelectMany(item => item.Bindings).Any(binding => binding.Destination is BindingDestination.Context target && target.ContextId == id))
+        if (!this.Accepts(token) || !this.Document.Routing.Contexts.Any(item => item.Id == id) || id == this.Document.Routing.RootContextId || this.baseline.Routing.Contexts.Any(item => item.Id == id) || this.Document.Routing.Contexts.SelectMany(item => item.Bindings).Any(binding => binding.Destination is BindingDestination.Context target && target.ContextId == id))
         {
             return false;
         }
