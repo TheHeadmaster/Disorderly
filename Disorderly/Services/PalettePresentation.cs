@@ -13,9 +13,10 @@ public sealed record PaletteBindingLabel(string Gesture, string Name, string Kin
 
 public sealed record PalettePresentation(Guid ActivationId, string ContextName, string Breadcrumb,
     ImmutableArray<PaletteBindingLabel> Bindings, bool IsRoot, CommandInvocation? Selection, bool ExecutionAvailable = false,
-    bool Submitting = false, ExecutionResult? Execution = null, Guid? AttemptId = null, ArgumentEditingSnapshot? Editing = null)
+    bool Submitting = false, ExecutionResult? Execution = null, Guid? AttemptId = null, ArgumentEditingSnapshot? Editing = null, bool BrowsingDrafts = false,
+    ImmutableArray<PaletteDraftLabel> Drafts = default, PaletteDraftLabel? ResumeSuggestion = null, string? DraftMessage = null, bool RestoreEditorFocus = false)
 {
-    public string NavigationHint => this.IsRoot ? "Esc  Dismiss" : "Esc  Back";
+    public string NavigationHint => this.BrowsingDrafts ? "Esc  Root" : this.IsRoot ? "Esc  Dismiss" : "Esc  Back";
     public bool CanRun => this.Selection?.IsExecutionReady == true && this.ExecutionAvailable && !this.Submitting
         && (this.Editing is null || this.Editing.CanSubmit)
         && (this.AttemptId is null || this.Execution?.CanRetry == true);
@@ -92,4 +93,24 @@ public static class PaletteConfiguration
         store.Publish(new RoutingConfiguration("root", [new ContextDefinition("root", "Root", [])]), []);
         return store;
     }
+}
+
+public sealed record PaletteDraftLabel(Guid Id, long Generation, string Name, string Status, string Path)
+{
+    public string AccessibleName => $"{this.Name}, unfinished, {this.Status}, draft {this.Id}";
+}
+
+public enum PaletteDraftAction { Browse, Back, Resume, Discard }
+
+public sealed class PaletteDraftEventArgs(Guid activationId, PaletteDraftAction action, Guid draftId = default, long generation = 0) : EventArgs
+{
+    public Guid ActivationId { get; } = activationId;
+    public PaletteDraftAction Action { get; } = action;
+    public Guid DraftId { get; } = draftId;
+    public long Generation { get; } = generation;
+}
+
+public interface IDraftPaletteView
+{
+    event EventHandler<PaletteDraftEventArgs>? DraftActionRequested;
 }

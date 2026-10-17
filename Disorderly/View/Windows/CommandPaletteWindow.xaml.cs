@@ -14,7 +14,7 @@ using Serilog;
 
 namespace Disorderly.View.Windows;
 
-public partial class CommandPaletteWindow : Window, ICommandPaletteView
+public partial class CommandPaletteWindow : Window, ICommandPaletteView, IDraftPaletteView
 {
     private HwndSource? source;
     private bool disposing;
@@ -27,6 +27,10 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
     private PaletteSubmissionEventArgs? submission;
     private readonly RunInputCapture runInput = new();
     private Guid editorId;
+    private bool browsingDrafts;
+    private PaletteDraftLabel[] renderedDrafts = [];
+    private Guid draftActivation;
+    private DispatcherOperation? editorFocusOperation;
     private readonly Dictionary<string, ArgumentParameterEditor> parameterEditors = [];
     private PaletteBindingLabel[] renderedBindings = [];
 
@@ -41,6 +45,7 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         TextCompositionManager.AddPreviewTextInputHandler(this, this.OnCompositionCompleted);
     }
 
+    public event EventHandler<PaletteDraftEventArgs>? DraftActionRequested;
     public event EventHandler<PaletteDismissEventArgs>? DismissRequested;
     public event EventHandler<PaletteGestureEventArgs>? GestureReceived;
     public event EventHandler<PaletteSubmissionEventArgs>? SubmissionRequested;
@@ -57,7 +62,8 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
             this.keyboard.Reset();
         }
 
-        this.ContextTitle.Text = presentation.ContextName;
+        this.RenderDrafts(presentation);
+        this.ContextTitle.Text = presentation.BrowsingDrafts ? "Suspended drafts" : presentation.ContextName;
         this.Breadcrumb.Text = presentation.Breadcrumb;
         if (!this.renderedBindings.SequenceEqual(presentation.Bindings))
         {
@@ -65,7 +71,7 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
             this.BindingList.ItemsSource = this.renderedBindings;
         }
 
-        this.EmptyContext.Visibility = presentation.Bindings.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
+        this.EmptyContext.Visibility = !presentation.BrowsingDrafts && presentation.Bindings.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         this.NavigationHint.Text = presentation.NavigationHint;
         this.SelectionPreview.Visibility = presentation.Selection is null ? Visibility.Collapsed : Visibility.Visible;
         this.SelectionTitle.Text = presentation.Selection?.Command.DisplayName ?? string.Empty;
@@ -76,6 +82,12 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
             : new PaletteSubmissionEventArgs(presentation.ActivationId, presentation.Selection.Id, presentation.AttemptId, presentation.Editing?.Revision);
         this.runInput.Update(this.submission, presentation.CanRun);
         this.UpdateEditors(presentation);
+
+        if (presentation.RestoreEditorFocus)
+        {
+            this.RestoreEditorPosition(presentation);
+        }
+
         this.RunButton.Visibility = presentation.ExecutionAvailable ? Visibility.Visible : Visibility.Collapsed;
         this.RunButton.IsEnabled = presentation.CanRun;
         this.RunButton.Content = presentation.RunLabel;
@@ -98,6 +110,12 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
 
         this.runInput.Cancel(); // Native button capture/press has now been canceled, not retargeted.
         this.activationId = Guid.Empty;
+        this.editorFocusOperation?.Abort();
+        this.DraftEntries.Children.Clear();
+        this.renderedDrafts = [];
+        this.draftActivation = Guid.Empty;
+        this.ResumePanel.Visibility = Visibility.Collapsed;
+        this.DraftBrowser.Visibility = Visibility.Collapsed;
         this.ClearEditors();
         this.placementOperation?.Abort();
         this.placementOperation = null;
@@ -279,6 +297,117 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         return false;
     }
 
+    private void OnDraftActionRequested(object? sender, PaletteDraftEventArgs args)
+    {
+        if (this.IsVisible)
+        {
+            this.DraftActionRequested?.Invoke(this, args);
+        }
+    }
+
+    private void RenderDrafts(PalettePresentation presentation)
+    {
+        bool enteringBrowser = !this.browsingDrafts && presentation.BrowsingDrafts;
+        bool leavingBrowser = this.browsingDrafts && !presentation.BrowsingDrafts;
+        this.browsingDrafts = presentation.BrowsingDrafts;
+        this.DraftBrowser.Visibility = this.browsingDrafts ? Visibility.Visible : Visibility.Collapsed;
+        this.ShortcutHint.Visibility = this.browsingDrafts ? Visibility.Collapsed : Visibility.Visible;
+        this.BindingList.Visibility = this.browsingDrafts ? Visibility.Collapsed : Visibility.Visible;
+        this.ResumePanel.Visibility = presentation.ResumeSuggestion is null ? Visibility.Collapsed : Visibility.Visible;
+        this.ResumeName.Text = presentation.ResumeSuggestion?.Name ?? string.Empty;
+        this.ResumeStatus.Text = presentation.ResumeSuggestion?.Status ?? string.Empty;
+        this.ResumeButton.Action = presentation.ResumeSuggestion is PaletteDraftLabel suggestion
+            ? new PaletteDraftEventArgs(presentation.ActivationId, PaletteDraftAction.Resume, suggestion.Id, suggestion.Generation) : null;
+        System.Windows.Automation.AutomationProperties.SetName(this.ResumeButton, $"Resume unfinished {presentation.ResumeSuggestion?.Name}");
+        this.BrowseDraftsButton.Visibility = presentation.IsRoot && !this.browsingDrafts && presentation.Selection is null ? Visibility.Visible : Visibility.Collapsed;
+        this.BrowseDraftsButton.Action = new PaletteDraftEventArgs(presentation.ActivationId, PaletteDraftAction.Browse);
+        this.DraftBackButton.Action = new PaletteDraftEventArgs(presentation.ActivationId, PaletteDraftAction.Back);
+        this.DraftMessage.Text = presentation.DraftMessage ?? string.Empty;
+        PaletteDraftLabel[] drafts = presentation.Drafts.IsDefault ? [] : [.. presentation.Drafts];
+        this.DraftEmpty.Visibility = drafts.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (this.draftActivation != presentation.ActivationId || !this.renderedDrafts.SequenceEqual(drafts))
+        {
+            this.draftActivation = presentation.ActivationId;
+            this.renderedDrafts = drafts;
+            this.DraftEntries.Children.Clear();
+            foreach (PaletteDraftLabel draft in drafts)
+            {
+                StackPanel entry = new() { Margin = new Thickness(0, 12, 0, 4) };
+                System.Windows.Automation.AutomationProperties.SetName(entry, draft.AccessibleName);
+                entry.Children.Add(new TextBlock { Text = draft.Name, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+                entry.Children.Add(new TextBlock { Text = draft.Status, TextWrapping = TextWrapping.Wrap });
+                entry.Children.Add(new TextBlock { Text = draft.Path, TextWrapping = TextWrapping.Wrap });
+                // A short visible identity also distinguishes identically named invocations without exposing arguments.
+                entry.Children.Add(new TextBlock { Text = $"Draft {draft.Id.ToString()[..8]}", FontSize = 11 });
+                StackPanel actions = new() { Orientation = Orientation.Horizontal };
+                foreach (PaletteDraftAction kind in new[] { PaletteDraftAction.Resume, PaletteDraftAction.Discard })
+                {
+                    DraftActionButton button = new() { Content = kind.ToString(), Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 4, 8, 0),
+                        Action = new PaletteDraftEventArgs(presentation.ActivationId, kind, draft.Id, draft.Generation) };
+                    System.Windows.Automation.AutomationProperties.SetName(button, $"{kind} {draft.AccessibleName}");
+                    button.ActionRequested += this.OnDraftActionRequested;
+                    actions.Children.Add(button);
+                }
+
+                entry.Children.Add(actions);
+                this.DraftEntries.Children.Add(entry);
+            }
+        }
+
+        if (enteringBrowser)
+        {
+            this.DraftBackButton.Focus();
+        }
+
+        if (leavingBrowser && presentation.Selection is null)
+        {
+            this.FocusSurface.Focus();
+        }
+    }
+
+    private void RestoreEditorPosition(PalettePresentation presentation)
+    {
+        this.editorFocusOperation?.Abort();
+        ArgumentEditingSnapshot? expected = presentation.Editing;
+        if (expected is null)
+        {
+            return;
+        }
+
+        this.editorFocusOperation = this.Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            this.editorFocusOperation = null;
+            if (this.disposing || !this.IsVisible || this.activationId != presentation.ActivationId || this.editorId != expected.SessionId)
+            {
+                return;
+            }
+
+            ArgumentEditPosition? position = expected.Position;
+            ArgumentParameterEditor? control = position is null ? null : this.parameterEditors.GetValueOrDefault(position.ParameterId);
+            if (control is null)
+            {
+                this.FocusSurface.Focus();
+                return;
+            }
+
+            if (control.BooleanInput.IsVisible && control.BooleanInput.IsEnabled)
+            {
+                control.BooleanInput.Focus();
+            }
+            else if (control.ValueInput.IsVisible && !control.ValueInput.IsReadOnly)
+            {
+                control.ValueInput.Focus();
+                int start = Math.Clamp(position!.Start, 0, control.ValueInput.Text.Length);
+                control.ValueInput.Select(start, Math.Clamp(position.Length, 0, control.ValueInput.Text.Length - start));
+                control.BringIntoView();
+            }
+            else
+            {
+                this.FocusSurface.Focus();
+            }
+        }));
+    }
+
     private void UpdateEditors(PalettePresentation presentation)
     {
         ArgumentEditingSnapshot? editing = presentation.Editing;
@@ -319,7 +448,13 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
         this.editorId = Guid.Empty;
     }
 
-    private void OnArgumentEdited(object? sender, PaletteArgumentEditEventArgs args) => this.ArgumentEdited?.Invoke(this, args);
+    private void OnArgumentEdited(object? sender, PaletteArgumentEditEventArgs args)
+    {
+        // New input wins over deferred saved-caret restoration, even within the same editor.
+        this.editorFocusOperation?.Abort();
+        this.editorFocusOperation = null;
+        this.ArgumentEdited?.Invoke(this, args);
+    }
 
     private void OnRunClick(object sender, RoutedEventArgs args)
     {
@@ -403,6 +538,20 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
             return;
         }
 
+        if (this.browsingDrafts)
+        {
+            if (args.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                args.Handled = true;
+                if (!args.IsRepeat)
+                {
+                    this.DraftActionRequested?.Invoke(this, new(this.activationId, PaletteDraftAction.Back));
+                }
+            }
+
+            return; // Browser controls own their keys, including ordinary Tab focus traversal.
+        }
+
         if (editor is not null)
         {
             if (args.Key == Key.Escape)
@@ -474,6 +623,12 @@ public partial class CommandPaletteWindow : Window, ICommandPaletteView
 
         this.runInput.Cancel(); // Native button capture/press has now been canceled, not retargeted.
         this.activationId = Guid.Empty;
+        this.editorFocusOperation?.Abort();
+        this.DraftEntries.Children.Clear();
+        this.renderedDrafts = [];
+        this.draftActivation = Guid.Empty;
+        this.ResumePanel.Visibility = Visibility.Collapsed;
+        this.DraftBrowser.Visibility = Visibility.Collapsed;
         this.ClearEditors();
         this.placementOperation?.Abort();
         this.source?.RemoveHook(this.HandleMessage);

@@ -30,6 +30,28 @@ public sealed class RoutingSession
     public ImmutableArray<string> NavigationPath => this.path.ToImmutableArray();
     public IReadOnlyList<BindingDefinition> AvailableBindings => this.ActiveContext.Bindings;
 
+    /// <summary>Restore only a real path through this immutable graph, without partial mutation.</summary>
+    public bool TryRestorePath(IReadOnlyList<string> navigationPath)
+    {
+        if (navigationPath.Count == 0 || navigationPath[0] != this.Snapshot.RootContextId)
+        {
+            return false;
+        }
+
+        for (int index = 1; index < navigationPath.Count; index++)
+        {
+            ContextDefinition previous = this.Snapshot.GetContext(navigationPath[index - 1]);
+            if (!previous.Bindings.Any(binding => binding.Destination is BindingDestination.Context target && target.ContextId == navigationPath[index]))
+            {
+                return false;
+            }
+        }
+
+        this.path.Clear();
+        this.path.AddRange(navigationPath);
+        return true;
+    }
+
     public RoutingResult Route(LogicalGesture gesture)
     {
         if (gesture == LogicalGesture.Escape)
