@@ -199,7 +199,10 @@ public class PaletteDraftTests
         drafts.Retain(editor.Snapshot, configuration: interaction.Snapshot, navigationPath: ["root", "missing"]);
         PaletteInteractionTests.View view = new();
         using CommandPaletteController controller = new(view, store, drafts: drafts);
-        controller.Open(); view.Key("Tab");
+        controller.Open();
+        Assert.That(view.Presentation.ResumeSuggestion, Is.Null);
+        controller.HandleDraftAction(new(view.Presentation.ActivationId, PaletteDraftAction.Browse));
+        controller.HandleDraftAction(Action(view.Presentation, PaletteDraftAction.Resume, view.Presentation.Drafts.Single()));
         Assert.That(view.Presentation.DraftMessage, Does.Contain("invalid"));
         Assert.That(drafts.Drafts.Length, Is.EqualTo(1));
         RoutingSession routing = store.CreateInteraction().Routing;
@@ -310,5 +313,28 @@ public class PaletteDraftTests
         view.Key("Escape");
         Assert.That(view.Presentation.BrowsingDrafts, Is.False);
         Assert.That(controller.State, Is.EqualTo(PaletteState.Visible));
+    }
+    [Test]
+    public void RootSuggestsNewestEligibleDraftWhileIncompatibleNewerWorkRemainsBrowsable()
+    {
+        CommandDefinition older = new("older", "Older", [new("text", "Text", ParameterValueType.Text)]);
+        CommandDefinition newer = new("newer", "Newer", [new("text", "Text", ParameterValueType.Text)]);
+        RoutingConfiguration graph = new("root", [new("root", "Root", [
+            new("a", "root", new("A"), new BindingDestination.Command("older")),
+            new("b", "root", new("B"), new BindingDestination.Command("newer")),
+        ])]);
+        CommandConfigurationStore store = PaletteConfiguration.CreateStore();
+        store.Publish(graph, [older, newer]);
+        PaletteInteractionTests.View view = new();
+        using CommandPaletteController controller = new(view, store);
+        controller.Open(); view.Key("A"); Edit(view, "text", new ArgumentEdit.RawText("older work")); controller.Dismiss();
+        controller.Open(); view.Key("B"); Edit(view, "text", new ArgumentEdit.RawText("newer work")); controller.Dismiss();
+        Assert.That(store.Publish(graph, [older, newer with { Parameters = [new("text", "Text", ParameterValueType.Integer)] }]).IsValid, Is.True);
+        controller.Open();
+        Assert.That(view.Presentation.ResumeSuggestion!.Name, Is.EqualTo("Older"));
+        Assert.That(view.Presentation.Drafts.Select(draft => draft.Name), Is.EqualTo(new[] { "Newer", "Older" }));
+        view.Key("Tab");
+        Assert.That(view.Presentation.Selection!.Command.Id, Is.EqualTo("older"));
+        Assert.That(controller.DraftStore.Drafts.Single().Editing.Invocation.Command.Id, Is.EqualTo("newer"));
     }
 }

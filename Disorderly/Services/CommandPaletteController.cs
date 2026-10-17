@@ -202,8 +202,13 @@ public sealed class CommandPaletteController : IDisposable
     {
         CommandInteraction current = this.interaction!;
         RoutingSession routing = current.Routing;
-        ImmutableArray<PaletteDraftLabel> drafts = [.. this.DraftStore.Drafts.Select(Label)];
-        this.resumeSuggestion = routing.NavigationPath.Length == 1 && this.selection is null && !this.browsingDrafts ? drafts.FirstOrDefault() : null;
+        ImmutableArray<InvocationDraft> availableDrafts = this.DraftStore.Drafts;
+        ImmutableArray<PaletteDraftLabel> drafts = [.. availableDrafts.Select(Label)];
+        bool rootSuggestions = routing.NavigationPath.Length == 1 && this.selection is null && !this.browsingDrafts;
+        InvocationDraft? eligible = rootSuggestions ? availableDrafts.FirstOrDefault(draft => DraftRestoration.Check(draft, this.configurations.Current!) is null) : null;
+        this.resumeSuggestion = eligible is null ? null : Label(eligible);
+        string? message = this.draftMessage ?? (rootSuggestions && eligible is null && !drafts.IsEmpty
+            ? "Suspended draft configuration has changed or is incomplete. Input remains stored; use Browse drafts for details or explicit discard." : null);
         this.view.Render(new PalettePresentation(this.activationId, routing.ActiveContext.DisplayName,
             string.Join(" / ", routing.NavigationPath.Select(id => current.Snapshot.Routing.GetContext(id).DisplayName)),
             [.. routing.AvailableBindings.Select(binding => binding.Destination switch
@@ -215,7 +220,7 @@ public sealed class CommandPaletteController : IDisposable
             this.selection is not null && this.submissions.HasImplementation(this.selection),
             this.submitting, this.execution, this.attempt?.AttemptId, this.editor?.Snapshot,
             this.browsingDrafts, drafts, this.resumeSuggestion,
-            this.draftMessage, this.restoreEditorFocus));
+            message, this.restoreEditorFocus));
         this.restoreEditorFocus = false;
     }
 
