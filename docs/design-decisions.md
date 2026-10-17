@@ -50,7 +50,7 @@ Execution results carry command/invocation/attempt identities, a structured cate
 
 Concrete limits: drive/UNC `.exe` syntax is checked at execution time; relative/device/argument-bearing/unresolved-dot paths are rejected. No preflight existence check promises filesystem identity or atomic launch. Success means process-start acceptance, not child exit or harmless child behavior. The app-owned acceptance ledger stores only compact IDs, bounded to 16,384 by default; when full it rejects new work rather than evicting deduplication history. It never retains completed request/catalog graphs. This process-lifetime resource limit is injectable for tests and resets on restart; durable idempotency/recovery remains deferred. Launch work is observed/logged independently of the UI; shutdown logging is best effort without waiting for children or arbitrarily blocking exit.
 
-The WPF preview exposes explicit Run/Retry, pending and inline outcomes. A focused Run button owns its standard Enter/Space activation and focus traversal, including repeat suppression; Enter is not reserved globally or in contextual configuration. Unassigned Tab on the contextual surface can perform standard focus navigation; assigned context bindings retain their meaning. No production sample bindings or command-management UI are introduced.
+The WPF preview exposes explicit Run/Retry, pending and inline outcomes. A focused Run button owns its standard Enter/Space activation and focus traversal, including repeat suppression; Enter is not reserved globally or in contextual configuration. Unassigned Tab on the contextual surface can perform standard focus navigation; assigned context bindings retain their meaning. No production sample bindings are introduced; User Configuration II adds a separate management interface.
 
 **Implemented — Argument Editing I:** `Commands.Editing.ArgumentEditorSession` holds raw parameter input separately from typed immutable invocation revisions, retaining command/catalog, origin and completion policy. Changes identify activation, invocation, editing session, expected revision and parameter; stale/unknown/out-of-scope edits are rejected. Revisions replace only the affected parameter ID through `WithArguments`; domain structure/type/requiredness remains authoritative in `ArgumentValidator`. Supplied binding presets are non-editable in this initial interface and remain unchanged; this deliberately limited boundary does not settle future preset override/editability policies.
 
@@ -83,7 +83,7 @@ Concrete implementation conventions (not new filesystem/product guarantees):
 - An unexpected runner exception or invalid/unverified outcome is conservatively NeedsRecovery, without automatic replay. Explicitly safe uncertain outcomes relinquish the slot; an unconfirmed safe boundary retains ownership and blocks mutating dispatch. No reconciliation/release API exists yet. Graceful shutdown consequently remains pending in that unsafe case, rather than silently abandoning finalization. `RequestShutdownAsync` otherwise stops admission/dispatch and cooperatively waits for safe checkpoints without arbitrary timeouts. The existing application is not wired to production operations.
 - Activity is a deterministic immutable projection, with revisioned ordered notifications outside state locks, observer exception isolation and factual verified/total counts (or an unknown total). Consumers marshal to their own dispatcher; Activity does not depend on palette visibility. Records, input history and unresolved recovery state remain in memory for process lifetime, without expiration. There is no persistence, durable acceptance or crash-recovery claim.
 
-**User Configuration I** below adds file-based authoring of existing definitions, contexts, bindings and presets independently of operation execution; graphical configuration editing remains deferred.
+**User Configuration I** below adds file-based authoring of existing definitions, contexts, bindings and presets independently of operation execution; graphical authoring is implemented in User Configuration II below.
 
 **Implemented — User Configuration I:** `Disorderly.Configuration` provides `ConfigurationDocument`, a strict explicit `System.Text.Json` codec, structured results/diagnostics, injected file persistence and one serialized `ConfigurationService` publishing into the existing combined store. Version 1 is independent of assembly version. Stable JSON discriminators describe existing domain types, never CLR/assembly names. The root document maps to `version`, `rootContextId`, `contexts` and `commands`; all current routing, typed presets, parameter order, optional metadata, completion policies, icons and LaunchExecutable intent round-trip. Binding ownership is its enclosing context, not display name. See the README schema and tested `examples/config.v1.json` for the concrete v1 encoding.
 
@@ -96,7 +96,7 @@ Technical conventions:
 - The service serializes load/save and requires a based-on revision for programmatic Save. Validation precedes persistence and uses frozen complete proposals. Known successful disk replacement precedes publication. Stale revisions and detected file-content SHA-256 changes reject saves; an unobserved existing file is protected. A unique same-directory temporary is flushed before `File.Replace`, or a no-overwrite move for initial creation; there is no truncate/delete-first path. Temporary cleanup is best effort. Failures preserve publication; ambiguous replacement is explicit and requires inspection/Reload, not blind retry. A newer out-of-service publication is preserved if detected during saving, even if the file was already saved.
 - All application file-backed publication writers must use the shared service. Fingerprint checks do not eliminate the cross-process interval between checking and replacement, and flush/replace behavior is filesystem-dependent. No globally transactional CAS or perfect crash-durability claim is made. This is configuration persistence, not operation journaling. No command, draft or operation executes because configuration was read or saved.
 
-**Still Deferred:** Preset editing/override policy, inline pills, guided prompting beyond this field editor, autocomplete/path completion, typed search, persistent drafts, graphical configuration management, schema migrations/file watching, additional execution kinds/argument vectors, production operation handlers and Activity UI, SQLite journaling/recovery, filesystem mutation/file organization/Undo, icon extraction/customization and durable deduplication.
+**Still Deferred:** Preset editing/override policy, inline pills, guided prompting beyond this field editor, autocomplete/path completion, typed search, persistent drafts, advanced configuration management, schema migrations/file watching, additional execution kinds/argument vectors, production operation handlers and Activity UI, SQLite journaling/recovery, filesystem mutation/file organization/Undo, icon extraction/customization and durable deduplication.
 
 ## Glossary
 
@@ -809,9 +809,9 @@ Icon metadata does not define the identity or behavior of a command.
 
 ## Deferred Features and Implementation Boundaries
 
-The following remain **Settled** and **Deferred** after User Configuration I; they are not currently implemented:
+The following remain **Settled** and **Deferred** after User Configuration II; they are not currently implemented:
 
-- Execution kinds beyond direct executable launching, typed command search and the binding editor.
+- Execution kinds beyond direct executable launching, typed command search and advanced binding-management workflows.
 - Command discovery, parameter pills, autocomplete and guided prompting beyond the initial field editor.
 - Durable draft persistence.
 - Interactive organization sessions.
@@ -821,12 +821,24 @@ The following remain **Settled** and **Deferred** after User Configuration I; th
 - Undo infrastructure.
 - User-facing Activity window and notifications (the immutable Activity domain is implemented).
 - Automatic application icon resolution.
-- User-facing icon customization, extraction and rendering (icon metadata is implemented).
+- Icon extraction, browsing and rendering (metadata authoring is implemented).
 - Future parallel file mutation on independent resources.
 
 Describing these features in this specification does not make them implemented.
 
 Globally serialized mutation is the initial accepted implementation strategy. Future nonconflicting parallelism is an approved architectural extension, not an implemented capability.
+
+## User Configuration II implementation
+
+**Implemented:** The existing MainWindow is the reusable graphical management window, opened explicitly through the tray action/double-click. Closing hides it; one app-owned instance/session retains unsaved work. Exit does not persist incomplete work. The palette and management window share the same ConfigurationService/store; no new hotkey, command registry or schema is introduced.
+
+`ConfigurationEditorSession` owns immutable proposal revisions, retained baseline/revision, session/selection provenance, raw invalid preset buffers, diagnostics and dirty/save state. Stable IDs are separate from editable names; parameter declaration order and unrelated definitions survive revisions. Existing Store.Validate remains authoritative; validation never publishes. WPF forms project this private state, preserve focused fields during ordinary input and reject detached selection events. The editor is owned by the UI thread; persistence remains asynchronous and serialized by the existing service.
+
+Commands, ordered parameters, contexts, typed destinations/gestures, presets, optional completion policies, execution and icon metadata can be authored. Only eligible required Path parameters are offered for LaunchExecutable. Opaque paths do not cause resource access. Presets preserve absence/empty text/false/zero; invariant Int64 input keeps malformed buffers and blocks Save. Configuration preset authoring does not change runtime preset editability. Shared contexts remain one definition with visible incoming references. Root is fixed. Removal is limited to bindings, preset/optional metadata clearing, and newly created unreferenced commands/contexts/parameters; persisted definition deletion/reference repair remains deferred.
+
+Explicit Save freezes the proposal and uses the service baseline revision. Only Saved updates the baseline and clears dirty state. Failed/conflicting/uncertain or saved-but-unpublished results preserve work and require explicit reconciliation; there is no automatic merge or overwrite. New publications mark a dirty editor stale without replacing it. Inspect Published is non-destructive; confirmed Discard adopts the current publication without changing active palette sessions. Invalid files retain existing fingerprint protection. All existing palette, invocation, draft and operation isolation remains intact. The management window neither executes commands nor modifies operations.
+
+Deferred management features include full reference-aware deletion, context duplication, ID migration/reference rewriting, comparison/merge, undo/redo, bulk import/export, profiles, specialized gesture recording, icon browsing/rendering and automatic file watching. These implementation limits do not settle broader runtime preset-override or configuration-migration policies.
 
 ## Initial Implementation Sequence (Nonbinding)
 

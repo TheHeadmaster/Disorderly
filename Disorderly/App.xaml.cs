@@ -21,6 +21,7 @@ public partial class App : Application
     private CommandPaletteController? paletteController;
     private GlobalHotkeyService? hotkeyService;
     private ConfigurationService? configuration;
+    private MainWindow? managementWindow;
 
     /// <summary>
     /// The list of directories used by the application.
@@ -86,7 +87,8 @@ public partial class App : Application
         this.configuration = new ConfigurationService(PaletteConfiguration.CreateEmptyStore(), Path.Combine(AppMeta.AppDataDirectory, "config.json"));
         this.paletteController = new CommandPaletteController(new CommandPaletteWindow(), this.configuration.Store);
         TrayIconHandler.Initialize(() => this.Dispatcher.BeginInvoke(new Action(() => this.paletteController.Open())),
-            () => this.Dispatcher.BeginInvoke(new Action(async () => await this.ReloadConfigurationAsync())));
+            () => this.Dispatcher.BeginInvoke(new Action(async () => await this.ReloadConfigurationAsync())),
+            () => this.Dispatcher.BeginInvoke(new Action(this.OpenManagement)));
         this.hotkeyService = new GlobalHotkeyService(new WindowsHotkeyRegistration());
         this.hotkeyService.Activated += this.OnHotkeyActivated;
         this.hotkeyService.Start();
@@ -110,6 +112,7 @@ public partial class App : Application
             if (!this.Dispatcher.HasShutdownStarted)
             {
                 TrayIconHandler.SetConfigurationStatus(result.Summary);
+                this.managementWindow?.RefreshStatus();
             }
         }
         catch (Exception error)
@@ -122,6 +125,12 @@ public partial class App : Application
         }
     }
 
+    private void OpenManagement()
+    {
+        this.managementWindow ??= new MainWindow(this.configuration!);
+        this.managementWindow.OpenManagement();
+    }
+
     private static string? SafeDiagnosticId(string? id) => StableIdentifier.IsValid(id) ? id : null;
 
     private void OnHotkeyActivated(object? sender, EventArgs args) => this.paletteController?.Toggle();
@@ -131,6 +140,7 @@ public partial class App : Application
     {
         base.OnExit(args);
 
+        this.managementWindow?.EndLifetime();
         this.hotkeyService?.Dispose();
         this.paletteController?.Dispose();
         TrayIconHandler.Shutdown();

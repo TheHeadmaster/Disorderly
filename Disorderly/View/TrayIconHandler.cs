@@ -10,7 +10,7 @@ public static class TrayIconHandler
     private static NotifyIcon? trayIcon;
     private static ToolStripMenuItem? configurationStatus;
 
-    public static void Initialize(Action openPalette, Action? reloadConfiguration = null)
+    public static void Initialize(Action openPalette, Action? reloadConfiguration = null, Action? openManagement = null)
     {
         using Stream stream = Application.GetResourceStream(new("/Resources/Images/Disorderly.ico", UriKind.Relative)).Stream;
 
@@ -21,18 +21,18 @@ public static class TrayIconHandler
             Text = "Disorderly",
         };
 
-        trayIcon.DoubleClick += (_, _) => OpenMainDisorderlyWindow();
+        trayIcon.DoubleClick += (_, _) => openManagement?.Invoke();
 
-        trayIcon.ContextMenuStrip = CreateMenu(openPalette, reloadConfiguration);
+        trayIcon.ContextMenuStrip = CreateMenu(openPalette, reloadConfiguration, openManagement);
     }
 
     /// <summary>Builds the existing tray actions independently of native icon lifetime.</summary>
-    public static ContextMenuStrip CreateMenu(Action openPalette, Action? reloadConfiguration = null)
+    public static ContextMenuStrip CreateMenu(Action openPalette, Action? reloadConfiguration = null, Action? openManagement = null)
     {
         ContextMenuStrip contextMenu = new();
 
         contextMenu.Items.Add("Open Command Palette", null, (_, _) => openPalette());
-        contextMenu.Items.Add("Open Disorderly", null, (_, _) => OpenMainDisorderlyWindow());
+        contextMenu.Items.Add("Open Disorderly", null, (_, _) => openManagement?.Invoke());
         ToolStripItem reload = contextMenu.Items.Add("Reload Configuration", null, (_, _) => reloadConfiguration?.Invoke());
         reload.Enabled = reloadConfiguration is not null;
         configurationStatus = new ToolStripMenuItem("Configuration: not loaded") { Enabled = false };
@@ -46,9 +46,4 @@ public static class TrayIconHandler
     public static void SetConfigurationStatus(string status) => configurationStatus?.Text = "Configuration: " + status;
 
     public static void Shutdown() => trayIcon?.Dispose();
-
-    private static void OpenMainDisorderlyWindow()
-    {
-        // TODO: Open the main window here when we set that up.
-    }
 }

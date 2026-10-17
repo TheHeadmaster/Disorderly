@@ -35,6 +35,7 @@ public sealed class ConfigurationService
 
     public CommandConfigurationStore Store { get; }
     public string Path { get; }
+    public ConfigurationResult? LastResult { get; private set; }
     public long Revision => Interlocked.Read(ref this.revision);
 
     public async Task<ConfigurationResult> ReloadAsync()
@@ -163,8 +164,12 @@ public sealed class ConfigurationService
         Interlocked.Increment(ref this.revision);
     }
 
-    private ConfigurationResult Result(ConfigurationStatus status, ImmutableArray<ConfigurationDiagnostic> diagnostics = default, bool? replaced = false) =>
-        new(status, this.Revision, diagnostics.IsDefault ? [] : diagnostics, replaced);
+    private ConfigurationResult Result(ConfigurationStatus status, ImmutableArray<ConfigurationDiagnostic> diagnostics = default, bool? replaced = false)
+    {
+        ConfigurationResult result = new(status, this.Revision, diagnostics.IsDefault ? [] : diagnostics, replaced);
+        this.LastResult = result;
+        return result;
+    }
 
     private static ImmutableArray<ConfigurationDiagnostic> Diagnostics(CommandConfigurationValidationResult validation) =>
         [.. validation.RoutingDiagnostics.Select(diagnostic => new ConfigurationDiagnostic(diagnostic.Code.ToString(), "$.contexts", diagnostic.Message,
